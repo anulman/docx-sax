@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <Version>0.1.0-alpha.3</Version>
+    <Version>0.1.0-alpha.1</Version>
     <Authors>Aidan Ulman</Authors>
     <Company>Aidan Ulman</Company>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

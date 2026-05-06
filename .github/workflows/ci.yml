@@ -67,7 +67,7 @@ jobs:
       - name: Package smoke via local tool install
         shell: pwsh
         run: |
-          dotnet tool install DocxSax.Tool --tool-path ./.smoke-tools --add-source artifacts/packages --version 0.1.0-alpha.3
+          dotnet tool install DocxSax.Tool --tool-path ./.smoke-tools --add-source artifacts/packages --version 0.1.0-alpha.1
           & "${{ matrix.toolExe }}" parse test/DocxSax.Tests/Fixtures/simple.docx --jsonl > package-smoke.jsonl
           $lineCount = 0
           Get-Content package-smoke.jsonl | ForEach-Object {
