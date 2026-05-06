@@ -1,5 +1,7 @@
 using System.IO.Packaging;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using DocxSax;
 using DocumentFormat.OpenXml.Packaging;
 
@@ -8,11 +10,6 @@ namespace DocxSax.Tool;
 internal static class Program
 {
     public static Task<int> Main(string[] args) => MainAsync(args, Console.Out, Console.Error);
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = false,
-    };
 
     public static async Task<int> MainAsync(string[] args, TextWriter stdout, TextWriter stderr)
     {
@@ -82,88 +79,124 @@ internal static class Program
 
     private static Task WriteUsageAsync(TextWriter stderr) => stderr.WriteLineAsync("usage: docx-sax parse <input.docx> --jsonl");
 
-    private static string ToJsonLine(DocxEvent docxEvent)
+    private static string ToJsonLine(DocxEvent docxEvent) => docxEvent switch
     {
-        object payload = docxEvent switch
-        {
-            PackageEvent package => new
-            {
-                type = "package",
-                phase = package.IsStart ? "start" : "end",
-                ordinal = package.Ordinal,
-            },
-            PartEvent part => new
-            {
-                type = "part",
-                phase = part.IsStart ? "start" : "end",
-                ordinal = part.Ordinal,
-                uri = part.Uri,
-                contentType = part.ContentType,
-                relationshipType = part.RelationshipType,
-            },
-            RelationshipEvent relationship => new
-            {
-                type = "relationship",
-                ordinal = relationship.Ordinal,
-                sourceUri = relationship.SourceUri,
-                id = relationship.Id,
-                relationshipType = relationship.RelationshipType,
-                targetUri = relationship.TargetUri,
-                isExternal = relationship.IsExternal,
-            },
-            ElementStartEvent element => new
-            {
-                type = "element",
-                ordinal = element.Ordinal,
-                partUri = element.PartUri,
-                name = element.Name,
-                localName = element.LocalName,
-                prefix = element.Prefix,
-                namespaceUri = element.NamespaceUri,
-                depth = element.Depth,
-                path = element.Path,
-                isEmptyElement = element.IsEmptyElement,
-                attributes = element.Attributes.Select(attribute => new
-                {
-                    name = attribute.Name,
-                    localName = attribute.LocalName,
-                    prefix = attribute.Prefix,
-                    namespaceUri = attribute.NamespaceUri,
-                    value = attribute.Value,
-                }),
-            },
-            ElementEndEvent element => new
-            {
-                type = "end",
-                ordinal = element.Ordinal,
-                partUri = element.PartUri,
-                name = element.Name,
-                localName = element.LocalName,
-                prefix = element.Prefix,
-                namespaceUri = element.NamespaceUri,
-                depth = element.Depth,
-                path = element.Path,
-            },
-            TextEvent text => new
-            {
-                type = "text",
-                ordinal = text.Ordinal,
-                partUri = text.PartUri,
-                text = text.Text,
-                depth = text.Depth,
-                path = text.Path,
-                isWhitespace = text.IsWhitespace,
-            },
-            DiagnosticEvent diagnostic => new
-            {
-                type = "diagnostic",
-                ordinal = diagnostic.Ordinal,
-                message = diagnostic.Message,
-                partUri = diagnostic.PartUri,
-            },
-            _ => throw new InvalidOperationException($"Unsupported event type: {docxEvent.GetType().Name}"),
-        };
+        PackageEvent package => Serialize(
+            new PackagePayload("package", package.IsStart ? "start" : "end", package.Ordinal),
+            JsonLineJsonContext.Default.PackagePayload),
+        PartEvent part => Serialize(
+            new PartPayload("part", part.IsStart ? "start" : "end", part.Ordinal, part.Uri, part.ContentType, part.RelationshipType),
+            JsonLineJsonContext.Default.PartPayload),
+        RelationshipEvent relationship => Serialize(
+            new RelationshipPayload("relationship", relationship.Ordinal, relationship.SourceUri, relationship.Id, relationship.RelationshipType, relationship.TargetUri, relationship.IsExternal),
+            JsonLineJsonContext.Default.RelationshipPayload),
+        ElementStartEvent element => Serialize(
+            new ElementStartPayload(
+                "element",
+                element.Ordinal,
+                element.PartUri,
+                element.Name,
+                element.LocalName,
+                element.Prefix,
+                element.NamespaceUri,
+                element.Depth,
+                element.Path,
+                element.IsEmptyElement,
+                element.Attributes.Select(ToAttributePayload).ToArray()),
+            JsonLineJsonContext.Default.ElementStartPayload),
+        ElementEndEvent element => Serialize(
+            new ElementEndPayload("end", element.Ordinal, element.PartUri, element.Name, element.LocalName, element.Prefix, element.NamespaceUri, element.Depth, element.Path),
+            JsonLineJsonContext.Default.ElementEndPayload),
+        TextEvent text => Serialize(
+            new TextPayload("text", text.Ordinal, text.PartUri, text.Text, text.Depth, text.Path, text.IsWhitespace),
+            JsonLineJsonContext.Default.TextPayload),
+        DiagnosticEvent diagnostic => Serialize(
+            new DiagnosticPayload("diagnostic", diagnostic.Ordinal, diagnostic.Message, diagnostic.PartUri),
+            JsonLineJsonContext.Default.DiagnosticPayload),
+        _ => throw new InvalidOperationException($"Unsupported event type: {docxEvent.GetType().Name}"),
+    };
 
-        return JsonSerializer.Serialize(payload, JsonOptions);
-    }
+    private static AttributePayload ToAttributePayload(DocxAttribute attribute) =>
+        new(attribute.Name, attribute.LocalName, attribute.Prefix, attribute.NamespaceUri, attribute.Value);
+
+    private static string Serialize<TPayload>(TPayload payload, JsonTypeInfo<TPayload> jsonTypeInfo) =>
+        JsonSerializer.Serialize(payload, jsonTypeInfo);
+
+    internal sealed record PackagePayload(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("phase")] string Phase,
+        [property: JsonPropertyName("ordinal")] long Ordinal);
+
+    internal sealed record PartPayload(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("phase")] string Phase,
+        [property: JsonPropertyName("ordinal")] long Ordinal,
+        [property: JsonPropertyName("uri")] string Uri,
+        [property: JsonPropertyName("contentType")] string ContentType,
+        [property: JsonPropertyName("relationshipType")] string RelationshipType);
+
+    internal sealed record RelationshipPayload(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("ordinal")] long Ordinal,
+        [property: JsonPropertyName("sourceUri")] string SourceUri,
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("relationshipType")] string RelationshipType,
+        [property: JsonPropertyName("targetUri")] string TargetUri,
+        [property: JsonPropertyName("isExternal")] bool IsExternal);
+
+    internal sealed record ElementStartPayload(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("ordinal")] long Ordinal,
+        [property: JsonPropertyName("partUri")] string PartUri,
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("localName")] string LocalName,
+        [property: JsonPropertyName("prefix")] string Prefix,
+        [property: JsonPropertyName("namespaceUri")] string NamespaceUri,
+        [property: JsonPropertyName("depth")] int Depth,
+        [property: JsonPropertyName("path")] string Path,
+        [property: JsonPropertyName("isEmptyElement")] bool IsEmptyElement,
+        [property: JsonPropertyName("attributes")] AttributePayload[] Attributes);
+
+    internal sealed record ElementEndPayload(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("ordinal")] long Ordinal,
+        [property: JsonPropertyName("partUri")] string PartUri,
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("localName")] string LocalName,
+        [property: JsonPropertyName("prefix")] string Prefix,
+        [property: JsonPropertyName("namespaceUri")] string NamespaceUri,
+        [property: JsonPropertyName("depth")] int Depth,
+        [property: JsonPropertyName("path")] string Path);
+
+    internal sealed record TextPayload(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("ordinal")] long Ordinal,
+        [property: JsonPropertyName("partUri")] string PartUri,
+        [property: JsonPropertyName("text")] string Text,
+        [property: JsonPropertyName("depth")] int Depth,
+        [property: JsonPropertyName("path")] string Path,
+        [property: JsonPropertyName("isWhitespace")] bool IsWhitespace);
+
+    internal sealed record DiagnosticPayload(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("ordinal")] long Ordinal,
+        [property: JsonPropertyName("message")] string Message,
+        [property: JsonPropertyName("partUri")] string? PartUri);
+
+    internal sealed record AttributePayload(
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("localName")] string LocalName,
+        [property: JsonPropertyName("prefix")] string Prefix,
+        [property: JsonPropertyName("namespaceUri")] string NamespaceUri,
+        [property: JsonPropertyName("value")] string Value);
 }
+
+[JsonSourceGenerationOptions(WriteIndented = false)]
+[JsonSerializable(typeof(Program.PackagePayload))]
+[JsonSerializable(typeof(Program.PartPayload))]
+[JsonSerializable(typeof(Program.RelationshipPayload))]
+[JsonSerializable(typeof(Program.ElementStartPayload))]
+[JsonSerializable(typeof(Program.ElementEndPayload))]
+[JsonSerializable(typeof(Program.TextPayload))]
+[JsonSerializable(typeof(Program.DiagnosticPayload))]
+internal sealed partial class JsonLineJsonContext : JsonSerializerContext;

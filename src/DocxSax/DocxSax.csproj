@@ -2,10 +2,15 @@
   <PropertyGroup>
     <AssemblyName>DocxSax</AssemblyName>
     <RootNamespace>DocxSax</RootNamespace>
+    <PackageId>DocxSax</PackageId>
     <Description>Typed low-level event reader for DOCX/OpenXML packages.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DocumentFormat.OpenXml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

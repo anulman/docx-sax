@@ -33,13 +33,22 @@ docs/                 # design notes as the project grows
 4. WASM package.
 5. Next.js demo using the public adapters.
 
-## Build and test
+## Build, test, and validation
 
 ```bash
 dotnet restore
 dotnet build --configuration Release
 dotnet test --configuration Release
+dotnet format --verify-no-changes --verbosity minimal
+dotnet pack --configuration Release --output artifacts/packages
 ```
+
+CI runs these checks on Ubuntu, Windows, and macOS with .NET 8. It also uploads Cobertura coverage artifacts, validates that CLI JSONL output parses line-by-line as JSON, installs the packed `DocxSax.Tool` from the local package output, and performs a Native AOT publish check for the CLI on each runner RID.
+
+NuGet package IDs:
+
+- `DocxSax` for the core library.
+- `DocxSax.Tool` for the `docx-sax` .NET global/local tool command.
 
 ## CLI usage
 

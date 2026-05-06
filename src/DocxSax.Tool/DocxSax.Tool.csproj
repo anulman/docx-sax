@@ -3,6 +3,7 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>docx-sax</AssemblyName>
     <RootNamespace>DocxSax.Tool</RootNamespace>
+    <PackageId>DocxSax.Tool</PackageId>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>docx-sax</ToolCommandName>
     <Description>CLI JSONL adapter for DocxSax typed DOCX/OpenXML events.</Description>
@@ -10,5 +11,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DocxSax\DocxSax.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>
