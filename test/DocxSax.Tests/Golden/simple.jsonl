@@ -1,6 +1,6 @@
 {"type":"package","phase":"start","ordinal":0}
 {"type":"relationship","ordinal":1,"sourceUri":"/","id":"rId1","relationshipType":"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument","targetUri":"/word/document.xml","isExternal":false}
-{"type":"part","phase":"start","ordinal":2,"uri":"/word/document.xml","contentType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml","relationshipType":"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"}
+{"type":"part","phase":"start","ordinal":2,"uri":"/word/document.xml","contentType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main\u002Bxml","relationshipType":"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"}
 {"type":"text","ordinal":3,"partUri":"/word/document.xml","text":"\n","depth":0,"path":"/","isWhitespace":true}
 {"type":"element","ordinal":4,"partUri":"/word/document.xml","name":"w:document","localName":"document","prefix":"w","namespaceUri":"http://schemas.openxmlformats.org/wordprocessingml/2006/main","depth":0,"path":"/w:document","isEmptyElement":false,"attributes":[{"name":"xmlns:w","localName":"w","prefix":"xmlns","namespaceUri":"http://www.w3.org/2000/xmlns/","value":"http://schemas.openxmlformats.org/wordprocessingml/2006/main"}]}
 {"type":"text","ordinal":5,"partUri":"/word/document.xml","text":"\n  ","depth":1,"path":"/w:document","isWhitespace":true}
@@ -18,5 +18,5 @@
 {"type":"text","ordinal":17,"partUri":"/word/document.xml","text":"\n","depth":1,"path":"/w:document","isWhitespace":true}
 {"type":"end","ordinal":18,"partUri":"/word/document.xml","name":"w:document","localName":"document","prefix":"w","namespaceUri":"http://schemas.openxmlformats.org/wordprocessingml/2006/main","depth":0,"path":"/w:document"}
 {"type":"text","ordinal":19,"partUri":"/word/document.xml","text":"\n","depth":0,"path":"/","isWhitespace":true}
-{"type":"part","phase":"end","ordinal":20,"uri":"/word/document.xml","contentType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml","relationshipType":"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"}
+{"type":"part","phase":"end","ordinal":20,"uri":"/word/document.xml","contentType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main\u002Bxml","relationshipType":"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"}
 {"type":"package","phase":"end","ordinal":21}

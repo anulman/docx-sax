@@ -1,5 +1,4 @@
 using System.IO.Packaging;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using DocxSax;
 using DocumentFormat.OpenXml.Packaging;
@@ -12,7 +11,6 @@ internal static class Program
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         WriteIndented = false,
     };
 
@@ -25,23 +23,45 @@ internal static class Program
             return 2;
         }
 
+        var tempPath = Path.GetTempFileName();
         try
         {
-            await using var stream = File.OpenRead(inputPath);
-            var reader = new DocxSaxReader();
-            var lines = reader.Read(stream).Select(ToJsonLine).ToArray();
+            await using (var stream = File.OpenRead(inputPath))
+            await using (var tempStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var tempWriter = new StreamWriter(tempStream))
+            {
+                var reader = new DocxSaxReader();
+                foreach (var docxEvent in reader.Read(stream))
+                {
+                    await tempWriter.WriteLineAsync(ToJsonLine(docxEvent));
+                }
+            }
 
-            foreach (var line in lines)
+            using var tempReader = File.OpenText(tempPath);
+            while (await tempReader.ReadLineAsync() is { } line)
             {
                 await stdout.WriteLineAsync(line);
             }
 
             return 0;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or FileFormatException or OpenXmlPackageException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or FileFormatException or OpenXmlPackageException or ArgumentException)
         {
             await stderr.WriteLineAsync($"docx-sax: failed to parse '{inputPath}': {exception.Message}");
             return 1;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
     }
 
@@ -49,12 +69,6 @@ internal static class Program
     {
         inputPath = string.Empty;
         error = string.Empty;
-
-        if (args.Length is 2 && args[0] == "parse")
-        {
-            inputPath = args[1];
-            return true;
-        }
 
         if (args.Length is 3 && args[0] == "parse" && args[2] == "--jsonl")
         {

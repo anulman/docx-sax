@@ -77,6 +77,18 @@ public sealed class JsonlCliTests
         Assert.Contains(lines, line => line.Contains("\"text\":\"Mystery node\"", StringComparison.Ordinal));
     }
 
+
+    [Fact]
+    public async Task ParseJsonl_RequiresExplicitJsonlFlag()
+    {
+        var result = await RunCliAsync(FixturePath("simple.docx"), includeJsonlFlag: false);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(string.Empty, result.StandardOutput);
+        Assert.Contains("--jsonl", result.StandardError, StringComparison.Ordinal);
+        Assert.Contains("usage:", result.StandardError, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task ParseJsonl_CorruptDocxExitsNonzeroAndWritesDiagnosticToStderr()
     {
@@ -120,7 +132,9 @@ public sealed class JsonlCliTests
         return directory?.FullName ?? throw new InvalidOperationException("Could not locate repository root.");
     }
 
-    private static async Task<CliResult> RunCliAsync(string inputPath)
+    private static Task<CliResult> RunCliAsync(string inputPath) => RunCliAsync(inputPath, includeJsonlFlag: true);
+
+    private static async Task<CliResult> RunCliAsync(string inputPath, bool includeJsonlFlag)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -137,12 +151,18 @@ public sealed class JsonlCliTests
         startInfo.ArgumentList.Add("--");
         startInfo.ArgumentList.Add("parse");
         startInfo.ArgumentList.Add(inputPath);
-        startInfo.ArgumentList.Add("--jsonl");
+        if (includeJsonlFlag)
+        {
+            startInfo.ArgumentList.Add("--jsonl");
+        }
 
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start dotnet CLI.");
-        var stdout = await process.StandardOutput.ReadToEndAsync();
-        var stderr = await process.StandardError.ReadToEndAsync();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
         await process.WaitForExitAsync();
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
 
         return new CliResult(process.ExitCode, stdout, stderr);
     }
