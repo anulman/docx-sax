@@ -3,7 +3,10 @@
 #include <dlfcn.h>
 
 #include <cassert>
+#include <condition_variable>
+#include <cstdint>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -20,6 +23,7 @@ constexpr int kStatusSuccess = 0;
 constexpr int kStatusInvalidArgument = 2;
 constexpr int kStatusParseFailure = 3;
 constexpr int kStatusCallbackFailure = 4;
+constexpr size_t kMaxQueuedBatches = 4;
 
 void Check(napi_env env, napi_status status) {
   assert(status == napi_ok);
@@ -92,32 +96,6 @@ struct NativeLibrary {
   }
 };
 
-struct ParseWork {
-  napi_env env = nullptr;
-  napi_async_work work = nullptr;
-  napi_deferred deferred = nullptr;
-  std::string input_path;
-  std::string library_path;
-  int batch_size = 128;
-  int native_status = kStatusSuccess;
-  std::string error;
-  std::vector<std::string> batches;
-};
-
-int OnBatch(const unsigned char* data, int length, void* user_data) {
-  if (data == nullptr || length < 0 || user_data == nullptr) {
-    return 1;
-  }
-
-  auto* parse_work = static_cast<ParseWork*>(user_data);
-  try {
-    parse_work->batches.emplace_back(reinterpret_cast<const char*>(data), static_cast<size_t>(length));
-    return 0;
-  } catch (...) {
-    return 1;
-  }
-}
-
 std::string StatusMessage(int status) {
   switch (status) {
     case kStatusInvalidArgument:
@@ -131,61 +109,241 @@ std::string StatusMessage(int status) {
   }
 }
 
-void ExecuteParse(napi_env /*env*/, void* data) {
-  auto* parse_work = static_cast<ParseWork*>(data);
+struct PendingNext {
+  napi_deferred deferred = nullptr;
+};
 
-  NativeLibrary library(parse_work->library_path);
-  if (!library.Open()) {
-    parse_work->native_status = -1;
-    parse_work->error = "Unable to load DocxSax native library at '" + parse_work->library_path + "': " + library.error;
+struct ParseStream {
+  napi_env env = nullptr;
+  napi_async_work work = nullptr;
+  napi_threadsafe_function notifier = nullptr;
+  int64_t id = 0;
+  std::string input_path;
+  std::string library_path;
+  int batch_size = 128;
+  int native_status = kStatusSuccess;
+  std::string error;
+
+  std::mutex mutex;
+  std::condition_variable queue_changed;
+  std::deque<std::string> queued_batches;
+  std::deque<PendingNext> pending_nexts;
+  bool done = false;
+  bool disposed = false;
+};
+
+std::mutex& StreamsMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+std::unordered_map<int64_t, std::shared_ptr<ParseStream>>& Streams() {
+  static std::unordered_map<int64_t, std::shared_ptr<ParseStream>> streams;
+  return streams;
+}
+
+int64_t NextStreamId() {
+  static int64_t next = 1;
+  std::lock_guard<std::mutex> guard(StreamsMutex());
+  return next++;
+}
+
+std::shared_ptr<ParseStream> FindStream(int64_t id) {
+  std::lock_guard<std::mutex> guard(StreamsMutex());
+  auto stream = Streams().find(id);
+  return stream == Streams().end() ? nullptr : stream->second;
+}
+
+void RemoveStream(int64_t id) {
+  std::lock_guard<std::mutex> guard(StreamsMutex());
+  Streams().erase(id);
+}
+
+napi_value CreateNextResult(napi_env env, bool done, const std::string* value) {
+  napi_value result;
+  Check(env, napi_create_object(env, &result));
+
+  napi_value done_value;
+  Check(env, napi_get_boolean(env, done, &done_value));
+  Check(env, napi_set_named_property(env, result, "done", done_value));
+
+  if (value != nullptr) {
+    napi_value batch;
+    Check(env, napi_create_string_utf8(env, value->c_str(), value->size(), &batch));
+    Check(env, napi_set_named_property(env, result, "value", batch));
+  }
+
+  return result;
+}
+
+void ResolveDeferred(napi_env env, napi_deferred deferred, bool done, const std::string* value) {
+  napi_value result = CreateNextResult(env, done, value);
+  Check(env, napi_resolve_deferred(env, deferred, result));
+}
+
+void RejectDeferred(napi_env env, napi_deferred deferred, const std::string& message) {
+  napi_value error;
+  Check(env, napi_create_string_utf8(env, message.c_str(), message.size(), &error));
+  Check(env, napi_reject_deferred(env, deferred, error));
+}
+
+void DrainPending(napi_env env, ParseStream* stream) {
+  struct Resolution {
+    napi_deferred deferred;
+    bool done;
+    std::string value;
+    bool has_value;
+    bool reject;
+    std::string error;
+  };
+
+  std::vector<Resolution> resolutions;
+
+  {
+    std::lock_guard<std::mutex> guard(stream->mutex);
+    while (!stream->pending_nexts.empty()) {
+      auto deferred = stream->pending_nexts.front().deferred;
+
+      if (!stream->queued_batches.empty()) {
+        std::string value = std::move(stream->queued_batches.front());
+        stream->queued_batches.pop_front();
+        stream->pending_nexts.pop_front();
+        resolutions.push_back(Resolution{deferred, false, std::move(value), true, false, {}});
+        stream->queue_changed.notify_all();
+        continue;
+      }
+
+      if (stream->done || stream->disposed) {
+        stream->pending_nexts.pop_front();
+        if (stream->native_status != kStatusSuccess && !stream->disposed) {
+          resolutions.push_back(Resolution{deferred, true, {}, false, true, stream->error});
+        } else {
+          resolutions.push_back(Resolution{deferred, true, {}, false, false, {}});
+        }
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  for (const auto& resolution : resolutions) {
+    if (resolution.reject) {
+      RejectDeferred(env, resolution.deferred, resolution.error);
+    } else if (resolution.has_value) {
+      ResolveDeferred(env, resolution.deferred, resolution.done, &resolution.value);
+    } else {
+      ResolveDeferred(env, resolution.deferred, resolution.done, nullptr);
+    }
+  }
+}
+
+void NotifyMainThread(const std::shared_ptr<ParseStream>& stream) {
+  if (stream->notifier != nullptr) {
+    (void)napi_call_threadsafe_function(stream->notifier, nullptr, napi_tsfn_nonblocking);
+  }
+}
+
+void NotifierCallback(napi_env env, napi_value /*js_callback*/, void* context, void* /*data*/) {
+  if (env == nullptr) {
     return;
   }
 
-  parse_work->native_status = library.symbol(
-      parse_work->input_path.c_str(),
-      parse_work->batch_size,
-      OnBatch,
-      parse_work);
+  auto* stream = static_cast<ParseStream*>(context);
+  DrainPending(env, stream);
+}
 
-  if (parse_work->native_status != kStatusSuccess) {
-    parse_work->error = StatusMessage(parse_work->native_status);
+int OnBatch(const unsigned char* data, int length, void* user_data) {
+  if (data == nullptr || length < 0 || user_data == nullptr) {
+    return 1;
+  }
+
+  auto* holder = static_cast<std::shared_ptr<ParseStream>*>(user_data);
+  const auto& stream = *holder;
+
+  std::unique_lock<std::mutex> lock(stream->mutex);
+  stream->queue_changed.wait(lock, [&stream] {
+    return stream->disposed || stream->queued_batches.size() < kMaxQueuedBatches;
+  });
+
+  if (stream->disposed) {
+    return 1;
+  }
+
+  try {
+    stream->queued_batches.emplace_back(reinterpret_cast<const char*>(data), static_cast<size_t>(length));
+  } catch (...) {
+    return 1;
+  }
+
+  lock.unlock();
+  NotifyMainThread(stream);
+  return 0;
+}
+
+void ExecuteParse(napi_env /*env*/, void* data) {
+  auto* holder = static_cast<std::shared_ptr<ParseStream>*>(data);
+  const auto& stream = *holder;
+
+  NativeLibrary library(stream->library_path);
+  if (!library.Open()) {
+    std::lock_guard<std::mutex> guard(stream->mutex);
+    stream->native_status = -1;
+    stream->error = "Unable to load DocxSax native library at '" + stream->library_path + "': " + library.error;
+    stream->done = true;
+    return;
+  }
+
+  int status = library.symbol(
+      stream->input_path.c_str(),
+      stream->batch_size,
+      OnBatch,
+      holder);
+
+  {
+    std::lock_guard<std::mutex> guard(stream->mutex);
+    stream->native_status = status;
+    if (status != kStatusSuccess && !stream->disposed) {
+      stream->error = StatusMessage(status);
+    }
+    stream->done = true;
   }
 }
 
 void CompleteParse(napi_env env, napi_status status, void* data) {
-  std::unique_ptr<ParseWork> parse_work(static_cast<ParseWork*>(data));
+  std::unique_ptr<std::shared_ptr<ParseStream>> holder(static_cast<std::shared_ptr<ParseStream>*>(data));
+  const auto& stream = *holder;
 
-  if (status != napi_ok || parse_work->native_status != kStatusSuccess) {
-    napi_value error;
-    const std::string message = status == napi_ok
-        ? parse_work->error
-        : "DocxSax native parser async work was cancelled or failed";
-    Check(env, napi_create_string_utf8(env, message.c_str(), message.size(), &error));
-    Check(env, napi_reject_deferred(env, parse_work->deferred, error));
-  } else {
-    napi_value array;
-    Check(env, napi_create_array_with_length(env, parse_work->batches.size(), &array));
-
-    for (size_t i = 0; i < parse_work->batches.size(); ++i) {
-      const std::string& batch = parse_work->batches[i];
-      napi_value value;
-      Check(env, napi_create_string_utf8(env, batch.c_str(), batch.size(), &value));
-      Check(env, napi_set_element(env, array, static_cast<uint32_t>(i), value));
-    }
-
-    Check(env, napi_resolve_deferred(env, parse_work->deferred, array));
+  if (status != napi_ok) {
+    std::lock_guard<std::mutex> guard(stream->mutex);
+    stream->native_status = -1;
+    stream->error = "DocxSax native parser async work was cancelled or failed";
+    stream->done = true;
   }
 
-  Check(env, napi_delete_async_work(env, parse_work->work));
+  stream->queue_changed.notify_all();
+  NotifyMainThread(stream);
+  DrainPending(env, stream.get());
+
+  if (stream->notifier != nullptr) {
+    Check(env, napi_release_threadsafe_function(stream->notifier, napi_tsfn_release));
+  }
+  Check(env, napi_delete_async_work(env, stream->work));
 }
 
-napi_value ParseFileBatchesJson(napi_env env, napi_callback_info info) {
+int32_t ReadStreamId(napi_env env, napi_value value) {
+  int32_t id = 0;
+  Check(env, napi_get_value_int32(env, value, &id));
+  return id;
+}
+
+napi_value StartParseFileBatchesJson(napi_env env, napi_callback_info info) {
   size_t argc = 3;
   napi_value args[3];
   Check(env, napi_get_cb_info(env, info, &argc, args, nullptr, nullptr));
 
   if (argc < 3) {
-    napi_throw_type_error(env, nullptr, "parseFileBatchesJson(path, batchSize, nativeLibraryPath) requires 3 arguments");
+    napi_throw_type_error(env, nullptr, "startParseFileBatchesJson(path, batchSize, nativeLibraryPath) requires 3 arguments");
     return nullptr;
   }
 
@@ -199,43 +357,127 @@ napi_value ParseFileBatchesJson(napi_env env, napi_callback_info info) {
   }
 
   int32_t batch_size = 128;
-  if (argc >= 2) {
-    napi_valuetype batch_type;
-    Check(env, napi_typeof(env, args[1], &batch_type));
-    if (batch_type == napi_number) {
-      Check(env, napi_get_value_int32(env, args[1], &batch_size));
-    }
+  napi_valuetype batch_type;
+  Check(env, napi_typeof(env, args[1], &batch_type));
+  if (batch_type == napi_number) {
+    Check(env, napi_get_value_int32(env, args[1], &batch_size));
   }
 
-  auto parse_work = std::make_unique<ParseWork>();
-  parse_work->env = env;
-  parse_work->input_path = ReadString(env, args[0]);
-  parse_work->library_path = ReadString(env, args[2]);
-  parse_work->batch_size = batch_size <= 0 ? 128 : batch_size;
-
-  napi_value promise;
-  Check(env, napi_create_promise(env, &parse_work->deferred, &promise));
+  auto stream = std::make_shared<ParseStream>();
+  stream->env = env;
+  stream->id = NextStreamId();
+  stream->input_path = ReadString(env, args[0]);
+  stream->library_path = ReadString(env, args[2]);
+  stream->batch_size = batch_size <= 0 ? 128 : batch_size;
 
   napi_value resource_name;
-  Check(env, napi_create_string_utf8(env, "DocxSaxParse", NAPI_AUTO_LENGTH, &resource_name));
+  Check(env, napi_create_string_utf8(env, "DocxSaxParseStream", NAPI_AUTO_LENGTH, &resource_name));
+  Check(env, napi_create_threadsafe_function(
+      env,
+      nullptr,
+      nullptr,
+      resource_name,
+      0,
+      1,
+      nullptr,
+      nullptr,
+      stream.get(),
+      NotifierCallback,
+      &stream->notifier));
+
+  auto holder = std::make_unique<std::shared_ptr<ParseStream>>(stream);
   Check(env, napi_create_async_work(
       env,
       nullptr,
       resource_name,
       ExecuteParse,
       CompleteParse,
-      parse_work.get(),
-      &parse_work->work));
-  Check(env, napi_queue_async_work(env, parse_work->work));
+      holder.get(),
+      &stream->work));
 
-  parse_work.release();
+  {
+    std::lock_guard<std::mutex> guard(StreamsMutex());
+    Streams().emplace(stream->id, stream);
+  }
+
+  Check(env, napi_queue_async_work(env, stream->work));
+  holder.release();
+
+  napi_value id_value;
+  Check(env, napi_create_int32(env, static_cast<int32_t>(stream->id), &id_value));
+  return id_value;
+}
+
+napi_value NextBatchJson(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value args[1];
+  Check(env, napi_get_cb_info(env, info, &argc, args, nullptr, nullptr));
+
+  if (argc < 1) {
+    napi_throw_type_error(env, nullptr, "nextBatchJson(streamId) requires 1 argument");
+    return nullptr;
+  }
+
+  auto stream = FindStream(ReadStreamId(env, args[0]));
+  if (stream == nullptr) {
+    napi_value promise;
+    napi_deferred deferred;
+    Check(env, napi_create_promise(env, &deferred, &promise));
+    ResolveDeferred(env, deferred, true, nullptr);
+    return promise;
+  }
+
+  napi_value promise;
+  napi_deferred deferred;
+  Check(env, napi_create_promise(env, &deferred, &promise));
+
+  {
+    std::lock_guard<std::mutex> guard(stream->mutex);
+    stream->pending_nexts.push_back(PendingNext{deferred});
+  }
+
+  DrainPending(env, stream.get());
   return promise;
 }
 
+napi_value DisposeParse(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value args[1];
+  Check(env, napi_get_cb_info(env, info, &argc, args, nullptr, nullptr));
+
+  if (argc >= 1) {
+    auto id = ReadStreamId(env, args[0]);
+    auto stream = FindStream(id);
+    if (stream != nullptr) {
+      {
+        std::lock_guard<std::mutex> guard(stream->mutex);
+        stream->disposed = true;
+        stream->done = true;
+      }
+      stream->queue_changed.notify_all();
+      NotifyMainThread(stream);
+      RemoveStream(id);
+    }
+  }
+
+  napi_value undefined;
+  Check(env, napi_get_undefined(env, &undefined));
+  return undefined;
+}
+
 napi_value Init(napi_env env, napi_value exports) {
-  napi_value function;
-  Check(env, napi_create_function(env, "parseFileBatchesJson", NAPI_AUTO_LENGTH, ParseFileBatchesJson, nullptr, &function));
-  Check(env, napi_set_named_property(env, exports, "parseFileBatchesJson", function));
+  napi_value start_function;
+  Check(env, napi_create_function(env, "startParseFileBatchesJson", NAPI_AUTO_LENGTH, StartParseFileBatchesJson, nullptr, &start_function));
+  Check(env, napi_set_named_property(env, exports, "startParseFileBatchesJson", start_function));
+
+  napi_value next_function;
+  Check(env, napi_create_function(env, "nextBatchJson", NAPI_AUTO_LENGTH, NextBatchJson, nullptr, &next_function));
+  Check(env, napi_set_named_property(env, exports, "nextBatchJson", next_function));
+
+  napi_value dispose_function;
+  Check(env, napi_create_function(env, "disposeParse", NAPI_AUTO_LENGTH, DisposeParse, nullptr, &dispose_function));
+  Check(env, napi_set_named_property(env, exports, "disposeParse", dispose_function));
+
   return exports;
 }
 

@@ -35,5 +35,5 @@ npm test
 
 - Current validation is Linux x64 only. The C# export is portable in shape, but package scripts and CI only build/test the `linux-x64` Native AOT library in this PR.
 - The bridge transports batches as JSON strings across the C ABI. That keeps the ABI small and version-tolerant while the event schema is still pre-1.0.
-- `parseFileBatches()` exposes a batched async iterable. Internally the v0 N-API worker completes a native parse on a libuv worker and then resolves collected JSON batches; it avoids a whole-document event-array API, but it is not yet true backpressured native streaming.
+- `parseFileBatches()` exposes a batched async iterable backed by a live native parse on a libuv worker. The addon queues only a small number of JSON batches at a time and blocks the native callback until JavaScript consumes more, so the Node bridge no longer buffers a whole-document event list.
 - Native parse failures reject the async iterator promise rather than writing diagnostics to stdout/stderr.

@@ -38,3 +38,19 @@ test('parseFile streams package, part, element, text, and end events from native
   assert.ok(events.some((event) => event.type === 'text' && event.text === 'Hello DOCX SAX'));
   assert.ok(events.some((event) => event.type === 'end' && event.name === 'w:document'));
 });
+
+test('parseFile can be stopped early without waiting for the whole native parse', async () => {
+  await Promise.race([
+    (async () => {
+      for await (const event of parseFile(fixture, { batchSize: 1 })) {
+        assert.equal(event.type, 'package');
+        assert.equal(event.phase, 'start');
+        break;
+      }
+    })(),
+    new Promise((_, reject) => {
+      const timeout = setTimeout(() => reject(new Error('timed out waiting for early stream disposal')), 1000);
+      timeout.unref();
+    }),
+  ]);
+});

@@ -30,10 +30,18 @@ export async function* parseFileBatches(path, options = {}) {
   }
 
   const { batchSize, nativeLibraryPath } = normalizeOptions(options);
-  const jsonBatches = await nativeAddon.parseFileBatchesJson(resolve(path), batchSize, nativeLibraryPath);
+  const streamId = nativeAddon.startParseFileBatchesJson(resolve(path), batchSize, nativeLibraryPath);
 
-  for (const jsonBatch of jsonBatches) {
-    yield JSON.parse(jsonBatch);
+  try {
+    while (true) {
+      const next = await nativeAddon.nextBatchJson(streamId);
+      if (next.done) {
+        break;
+      }
+      yield JSON.parse(next.value);
+    }
+  } finally {
+    nativeAddon.disposeParse(streamId);
   }
 }
 
