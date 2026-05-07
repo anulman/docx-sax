@@ -7,3 +7,6 @@ obj/
 TestResults/
 coverage/
 artifacts/
+node_modules/
+packages/node/build/
+packages/node/native/

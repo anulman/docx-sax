@@ -36,6 +36,12 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Setup Node
+        if: matrix.rid == 'linux-x64'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Restore
         run: dotnet restore
 
@@ -95,6 +101,14 @@ jobs:
 
       - name: Native AOT publish check
         run: dotnet publish src/DocxSax.Tool/DocxSax.Tool.csproj --configuration Release --runtime ${{ matrix.rid }} --self-contained true -p:PublishAot=true -p:PublishDir=${{ github.workspace }}/artifacts/aot/${{ matrix.rid }}/
+
+      - name: Node N-API wrapper smoke
+        if: matrix.rid == 'linux-x64'
+        working-directory: packages/node
+        run: |
+          npm ci
+          npm run build
+          npm test
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
