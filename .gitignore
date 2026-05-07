@@ -10,3 +10,6 @@ artifacts/
 node_modules/
 packages/docx-sax/build/
 packages/docx-sax/native/
+packages/docx-sax/dist/
+packages/docx-sax/node_modules/
+.vite/

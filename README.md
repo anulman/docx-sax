@@ -6,7 +6,7 @@ The core is a .NET 8 library built on the Microsoft Open XML SDK. It exposes Ope
 
 ## Current status
 
-This repository currently contains the core .NET library scaffold, a minimal forward-only reader for simple Word documents, a CLI JSONL adapter over the typed event stream, and an initial Linux x64 Node N-API wrapper backed by a .NET Native AOT shared library.
+This repository currently contains the core .NET library scaffold, a minimal forward-only reader for simple Word documents, a CLI JSONL adapter over the typed event stream, an initial Linux x64 Node N-API wrapper backed by a .NET Native AOT shared library, and a browser/WASM bridge spike.
 
 ## Non-goals
 
@@ -22,7 +22,8 @@ DocxSax.sln
 src/DocxSax/          # .NET 8 typed event reader library
 src/DocxSax.Tool/     # .NET 8 CLI/global-tool JSONL adapter
 src/DocxSax.Native/   # .NET 8 Native AOT C ABI bridge for Node/native hosts
-packages/docx-sax/   # Node N-API wrapper package
+src/DocxSax.Browser/  # .NET 8 browser-wasm JSExport bridge spike
+packages/docx-sax/    # Single npm package with /node and /browser exports
 test/DocxSax.Tests/   # generated DOCX fixtures, golden JSONL, and tests
 docs/                 # design notes as the project grows
 ```
@@ -48,9 +49,11 @@ cd packages/docx-sax
 npm install
 npm run build
 npm test
+npx playwright install chromium
+npm run test:browser
 ```
 
-CI runs these checks on Ubuntu, Windows, and macOS with .NET 8. It also uploads Cobertura coverage artifacts, validates that CLI JSONL output parses line-by-line as JSON, installs the packed `DocxSax.Tool` from the local package output, and performs a Native AOT publish check for the CLI on each runner RID. The Linux leg additionally builds and tests the Node N-API wrapper.
+CI runs these checks on Ubuntu, Windows, and macOS with .NET 8. It also uploads Cobertura coverage artifacts, validates that CLI JSONL output parses line-by-line as JSON, installs the packed `DocxSax.Tool` from the local package output, and performs a Native AOT publish check for the CLI on each runner RID. The Linux leg additionally builds/tests the Node N-API wrapper and runs the browser/WASM Vite + Playwright smoke.
 
 NuGet package IDs:
 
@@ -108,6 +111,25 @@ for await (const batch of parseFileBatches('document.docx', { batchSize: 256 }))
 ```
 
 See [`docs/node-native.md`](docs/node-native.md) for local validation and current transport caveats. The v0 package validates on Linux x64 first.
+
+## Browser/WASM usage
+
+```js
+import { parseBytes, parseBytesBatches } from 'docx-sax/browser';
+
+const response = await fetch('/document.docx');
+const bytes = new Uint8Array(await response.arrayBuffer());
+
+for await (const batch of parseBytesBatches(bytes, { batchSize: 256 })) {
+    // batch is an array of the same low-level event payloads as CLI/Node
+}
+
+for await (const event of parseBytes(bytes)) {
+    console.log(event.type, event.ordinal);
+}
+```
+
+See [`docs/browser-wasm.md`](docs/browser-wasm.md) for local validation, artifact-size measurements, and current caveats. The spike validates that OpenXML SDK can parse a small generated DOCX fixture in browser WASM, but the published runtime is still large and not yet a polished package.
 
 ## Minimal library usage
 

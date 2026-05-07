@@ -8,24 +8,35 @@
       "types": "./node.d.ts",
       "import": "./node.js",
       "default": "./node.js"
+    },
+    "./browser": {
+      "import": "./browser.js",
+      "default": "./browser.js"
     }
   },
   "files": [
     "node.js",
     "node.d.ts",
+    "browser.js",
     "build/Release/docx_sax_node.node",
-    "native/linux-x64/DocxSax.Native.so"
+    "native/linux-x64/DocxSax.Native.so",
+    "dist/wasm/"
   ],
   "scripts": {
     "build:node:dotnet": "dotnet publish ../../src/DocxSax.Native/DocxSax.Native.csproj --configuration Release --runtime linux-x64 --self-contained true -p:PublishAot=true -p:PublishDir=$PWD/native/linux-x64/",
     "build:node:addon": "node-gyp rebuild",
     "build:node": "npm run build:node:dotnet && npm run build:node:addon",
-    "build": "npm run build:node",
+    "build": "npm run build:node && npm run build:browser",
     "test:node": "node --test test/*.test.js",
-    "test": "npm run test:node"
+    "test": "npm run test:node && npm run test:browser",
+    "build:browser:dotnet": "dotnet publish ../../src/DocxSax.Browser/DocxSax.Browser.csproj --configuration Release -p:PublishDir=$PWD/dist/wasm/",
+    "build:browser": "npm run build:browser:dotnet",
+    "test:browser": "npm run build:browser && node scripts/smoke.mjs"
   },
   "devDependencies": {
-    "node-gyp": "^11.2.0"
+    "@playwright/test": "^1.56.1",
+    "node-gyp": "^11.2.0",
+    "vite": "^7.1.12"
   },
   "engines": {
     "node": ">=20"

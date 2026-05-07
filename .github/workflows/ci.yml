@@ -42,6 +42,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Setup .NET WASM workloads
+        run: dotnet workload install wasm-tools wasm-experimental
+
       - name: Restore
         run: dotnet restore
 
@@ -109,6 +112,14 @@ jobs:
           npm ci
           npm run build:node
           npm run test:node
+
+      - name: Browser WASM bridge smoke
+        if: matrix.rid == 'linux-x64'
+        working-directory: packages/docx-sax
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run test:browser
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
