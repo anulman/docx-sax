@@ -24,6 +24,7 @@ src/DocxSax.Tool/     # .NET 8 CLI/global-tool JSONL adapter
 src/DocxSax.Native/   # .NET 8 Native AOT C ABI bridge for Node/native hosts
 src/DocxSax.Browser/  # .NET 8 browser-wasm JSExport bridge spike
 packages/docx-sax/    # Single npm package with /node and /browser exports
+demos/nextjs-wasm/    # Next.js browser/WASM demo
 test/DocxSax.Tests/   # generated DOCX fixtures, golden JSONL, and tests
 docs/                 # design notes as the project grows
 ```
@@ -130,6 +131,20 @@ for await (const event of parseBytes(bytes)) {
 ```
 
 See [`docs/browser-wasm.md`](docs/browser-wasm.md) for local validation, artifact-size measurements, and current caveats. The spike validates that OpenXML SDK can parse a small generated DOCX fixture in browser WASM, but the published runtime is still large and not yet a polished package.
+
+## Next.js WASM demo
+
+`demos/nextjs-wasm` is an isolated Next.js app that loads `docx-sax/browser` in a client component, accepts a `.docx` upload, parses it through the browser WASM bridge, and renders a simple text preview from `text` events grouped by paragraph ends. It also exposes the safe public smoke fixture at `/fixtures/simple.docx`.
+
+```bash
+cd demos/nextjs-wasm
+npm install
+npm run build:wasm   # publishes packages/docx-sax WASM assets, then copies _framework/ into public/docx-sax/
+npm run build        # regular Next/Vercel build; intentionally does not run dotnet publish
+npm run test:e2e     # uploads public/fixtures/simple.docx and verifies WASM parse + preview render
+```
+
+For a single local validation command, run `npm test`. Vercel should use the plain `npm run build` path after WASM assets have been prepared by CI or a package/artifact step; generic Vercel builds should not republish the heavy .NET browser workload.
 
 ## Minimal library usage
 

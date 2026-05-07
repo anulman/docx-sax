@@ -1,0 +1,28 @@
+{
+  "name": "@docx-sax/demo-nextjs-wasm",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "Next.js browser/WASM demo for docx-sax/browser.",
+  "type": "module",
+  "scripts": {
+    "prepare:wasm": "node scripts/prepare-wasm.mjs",
+    "build:wasm": "npm --prefix ../../packages/docx-sax run build:browser && npm run prepare:wasm",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test:e2e": "playwright test",
+    "test": "npm run build:wasm && npm run build && npm run test:e2e"
+  },
+  "dependencies": {
+    "docx-sax": "file:../../packages/docx-sax",
+    "next": "^16.0.7",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  }
+}
