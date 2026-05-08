@@ -4,11 +4,17 @@
   "description": "Node native wrapper for DocxSax typed DOCX SAX events.",
   "type": "module",
   "main": "./index.js",
+  "types": "./index.d.ts",
   "exports": {
-    ".": "./index.js"
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    }
   },
   "files": [
     "index.js",
+    "index.d.ts",
     "build/Release/docx_sax_node.node",
     "native/"
   ],

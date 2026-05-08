@@ -2,6 +2,8 @@
 
 `packages/node` contains a v0 Node wrapper for the typed `DocxSaxReader` event stream. It is intentionally not a CLI/stdout adapter: Node calls a N-API addon, the addon loads the .NET Native AOT shared library, and the native library calls back with JSON batches.
 
+The public API is transport-neutral above the file input boundary: `parseFile()` yields the same `DocxSaxEvent` objects that `@docx-sax/browser` yields from `parseBytes()`, and `parseFileBatches()` yields `DocxSaxEvent[]` batches. The shared option is `{ batchSize }`; Node additionally supports `{ nativeLibraryPath }` for local/native bridge validation.
+
 ## Usage
 
 ```js
@@ -12,11 +14,11 @@ for await (const event of parseFile('document.docx')) {
 }
 
 for await (const batch of parseFileBatches('document.docx', { batchSize: 256 })) {
-  // batch is an array of low-level package/part/relationship/element/text/end events
+  // batch is DocxSaxEvent[], matching @docx-sax/browser parseBytesBatches()
 }
 ```
 
-The default export also exposes `parseFile` and `parseFileBatches`.
+The default export also exposes `parseFile` and `parseFileBatches`. TypeScript declarations are included for the shared `DocxSaxEvent` union: `package`, `part`, `relationship`, `element`, `text`, `end`, and `diagnostic` events plus shared XML attribute shapes.
 
 ## Local validation
 

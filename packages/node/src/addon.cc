@@ -308,6 +308,7 @@ void ExecuteParse(napi_env /*env*/, void* data) {
     }
     stream->done = true;
   }
+  stream->queue_changed.notify_all();
 }
 
 void CompleteParse(napi_env env, napi_status status, void* data) {
@@ -329,6 +330,7 @@ void CompleteParse(napi_env env, napi_status status, void* data) {
     Check(env, napi_release_threadsafe_function(stream->notifier, napi_tsfn_release));
   }
   Check(env, napi_delete_async_work(env, stream->work));
+  RemoveStream(stream->id);
 }
 
 int32_t ReadStreamId(napi_env env, napi_value value) {
@@ -450,11 +452,13 @@ napi_value DisposeParse(napi_env env, napi_callback_info info) {
     auto stream = FindStream(id);
     if (stream != nullptr) {
       {
-        std::lock_guard<std::mutex> guard(stream->mutex);
+        std::unique_lock<std::mutex> lock(stream->mutex);
         stream->disposed = true;
-        stream->done = true;
+        stream->queue_changed.notify_all();
+        stream->queue_changed.wait(lock, [&stream] {
+          return stream->done;
+        });
       }
-      stream->queue_changed.notify_all();
       NotifyMainThread(stream);
       RemoveStream(id);
     }

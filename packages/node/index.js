@@ -24,6 +24,13 @@ function normalizeOptions(options = {}) {
   return { batchSize, nativeLibraryPath };
 }
 
+/**
+ * Parse a DOCX file path through the Node native bridge and yield arrays of transport-neutral DocxSax events.
+ *
+ * @param {string} path
+ * @param {{ batchSize?: number, nativeLibraryPath?: string }} [options]
+ * @returns {AsyncGenerator<import('./index.d.ts').DocxSaxEvent[], void, void>}
+ */
 export async function* parseFileBatches(path, options = {}) {
   if (typeof path !== 'string' || path.length === 0) {
     throw new TypeError('parseFileBatches(path) requires a non-empty string path');
@@ -31,20 +38,35 @@ export async function* parseFileBatches(path, options = {}) {
 
   const { batchSize, nativeLibraryPath } = normalizeOptions(options);
   const streamId = nativeAddon.startParseFileBatchesJson(resolve(path), batchSize, nativeLibraryPath);
+  let completedNaturally = false;
 
   try {
     while (true) {
       const next = await nativeAddon.nextBatchJson(streamId);
       if (next.done) {
+        completedNaturally = true;
+        // The native worker may mark the stream done just before its async completion
+        // callback runs on the JS thread. Give that callback a turn before the test
+        // process exits, especially on Node 20 where pending addon cleanup is less forgiving.
+        await new Promise((resolve) => setImmediate(resolve));
         break;
       }
       yield JSON.parse(next.value);
     }
   } finally {
-    nativeAddon.disposeParse(streamId);
+    if (!completedNaturally) {
+      nativeAddon.disposeParse(streamId);
+    }
   }
 }
 
+/**
+ * Parse a DOCX file path through the Node native bridge and yield transport-neutral DocxSax events.
+ *
+ * @param {string} path
+ * @param {{ batchSize?: number, nativeLibraryPath?: string }} [options]
+ * @returns {AsyncGenerator<import('./index.d.ts').DocxSaxEvent, void, void>}
+ */
 export async function* parseFile(path, options = {}) {
   for await (const batch of parseFileBatches(path, options)) {
     for (const event of batch) {
