@@ -52,7 +52,7 @@ for await (const batch of parseBytesBatches(bytes, {
 
 ## Next.js demo
 
-`demos/nextjs-wasm` provides a small browser-only demo for Next.js/Vercel validation. It imports `@docx-sax/browser` from the local package, passes `dotnetModuleUrl: '/docx-sax/_framework/dotnet.js'`, and renders a simple preview from parsed event-stream `text` records. The checked-in fixtures are public/generated regression fixtures, not private corpus files.
+`demos/nextjs-wasm` provides a small browser-only demo for Next.js/Vercel validation. It imports `docx-sax/browser` from the local package, passes `dotnetModuleUrl: '/docx-sax/_framework/dotnet.js'`, preloads and warms the WASM runtime during idle time, and renders a simple preview from parsed event-stream `text` records. The checked-in fixtures are public/generated regression fixtures, not private corpus files.
 
 The demo intentionally separates heavy WASM preparation from the generic Next build:
 

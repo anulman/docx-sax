@@ -1,12 +1,23 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { parseBytes } from 'docx-sax/browser';
+import { useEffect, useMemo, useState } from 'react';
+import { parseBytesBatches, preloadRuntime, warmupRuntime } from 'docx-sax/browser';
 
 const DOTNET_MODULE_URL = '/docx-sax/_framework/dotnet.js';
+const INITIAL_STATUS = 'Choose a .docx file to parse it in your browser.';
+const PREVIEW_UPDATE_INTERVAL_MS = 100;
 
 function emptySummary() {
   return { events: 0, textEvents: 0, parts: new Set(), diagnostics: [] };
+}
+
+function cloneSummary(summary) {
+  return {
+    events: summary.events,
+    textEvents: summary.textEvents,
+    parts: new Set(summary.parts),
+    diagnostics: [...summary.diagnostics],
+  };
 }
 
 function renderPreview(events) {
@@ -45,13 +56,52 @@ function renderPreview(events) {
 
 export default function Home() {
   const [fileName, setFileName] = useState('');
-  const [status, setStatus] = useState('Choose a .docx file to parse it in your browser.');
+  const [status, setStatus] = useState(INITIAL_STATUS);
   const [busy, setBusy] = useState(false);
   const [paragraphs, setParagraphs] = useState([]);
   const [summary, setSummary] = useState(emptySummary());
   const [error, setError] = useState('');
 
   const partList = useMemo(() => [...summary.parts].sort(), [summary]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const preload = async () => {
+      try {
+        await preloadRuntime({ dotnetModuleUrl: DOTNET_MODULE_URL });
+        if (!cancelled) {
+          setStatus((currentStatus) => currentStatus === INITIAL_STATUS
+            ? 'WASM runtime ready. Choose a .docx file to parse it in your browser.'
+            : currentStatus);
+        }
+
+        await warmupRuntime({ dotnetModuleUrl: DOTNET_MODULE_URL });
+        if (!cancelled) {
+          setStatus((currentStatus) => currentStatus === 'WASM runtime ready. Choose a .docx file to parse it in your browser.'
+            ? 'WASM runtime ready and warmed. Choose a .docx file to parse it in your browser.'
+            : currentStatus);
+        }
+      } catch (err) {
+        // Keep the upload path resilient: parseBytesBatches will retry/report the runtime error on demand.
+        console.warn('docx-sax WASM preload/warmup failed', err);
+      }
+    };
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(preload, { timeout: 2_000 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(idleId);
+      };
+    }
+
+    const timeoutId = window.setTimeout(preload, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
 
   async function parseFile(file) {
     setBusy(true);
@@ -64,18 +114,32 @@ export default function Home() {
     try {
       const events = [];
       const nextSummary = emptySummary();
+      let lastPreviewUpdate = 0;
 
-      for await (const event of parseBytes(file, { batchSize: 128, dotnetModuleUrl: DOTNET_MODULE_URL })) {
-        events.push(event);
-        nextSummary.events += 1;
-        if (event.partUri) nextSummary.parts.add(event.partUri);
-        if (event.type === 'text' && !event.isWhitespace) nextSummary.textEvents += 1;
-        if (event.type === 'diagnostic') nextSummary.diagnostics.push(event.message);
+      // parseBytesBatches(file) yields the same DocxSaxEvent object batches as docx-sax/node
+      // parseFileBatches(path); the browser wrapper only differs in accepting bytes/blob input and
+      // a dotnetModuleUrl. The WASM bridge is pull-based, so each loop gets a real parsed batch.
+      for await (const batch of parseBytesBatches(file, { batchSize: 128, dotnetModuleUrl: DOTNET_MODULE_URL })) {
+        events.push(...batch);
+        for (const event of batch) {
+          nextSummary.events += 1;
+          if (event.partUri) nextSummary.parts.add(event.partUri);
+          if (event.type === 'text' && !event.isWhitespace) nextSummary.textEvents += 1;
+          if (event.type === 'diagnostic') nextSummary.diagnostics.push(event.message);
+        }
+
+        const now = performance.now();
+        if (now - lastPreviewUpdate >= PREVIEW_UPDATE_INTERVAL_MS) {
+          lastPreviewUpdate = now;
+          setParagraphs(renderPreview(events));
+          setSummary(cloneSummary(nextSummary));
+          setStatus(`Parsed ${nextSummary.events} events from ${file.name}…`);
+        }
       }
 
       const nextParagraphs = renderPreview(events);
       setParagraphs(nextParagraphs);
-      setSummary(nextSummary);
+      setSummary(cloneSummary(nextSummary));
       setStatus(`Parsed ${nextSummary.events} events from ${file.name}.`);
     } catch (err) {
       console.error(err);
@@ -99,8 +163,8 @@ export default function Home() {
         <h1>Next.js DOCX event preview</h1>
         <p>
           Upload a Word document and this demo loads <code>docx-sax/browser</code> client-side,
-          parses the DOCX through the WASM bridge, then renders text collected from the low-level
-          event stream.
+          parses the DOCX through the WASM bridge, then renders text collected from the shared
+          DocxSaxEvent stream used by both browser and Node wrappers.
         </p>
       </section>
 
