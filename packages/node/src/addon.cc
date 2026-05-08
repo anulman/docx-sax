@@ -330,7 +330,6 @@ void CompleteParse(napi_env env, napi_status status, void* data) {
     Check(env, napi_release_threadsafe_function(stream->notifier, napi_tsfn_release));
   }
   Check(env, napi_delete_async_work(env, stream->work));
-  RemoveStream(stream->id);
 }
 
 int32_t ReadStreamId(napi_env env, napi_value value) {
