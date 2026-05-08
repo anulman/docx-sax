@@ -1,4 +1,4 @@
-import { parseBytesBatches } from '../browser.js';
+import { parseBytes, parseBytesBatches, preloadRuntime, warmupRuntime } from '../browser.js';
 
 const response = await fetch('/test/DocxSax.Tests/Fixtures/simple.docx');
 if (!response.ok) {
@@ -6,23 +6,38 @@ if (!response.ok) {
 }
 
 const bytes = new Uint8Array(await response.arrayBuffer());
-const seen = new Set();
+await preloadRuntime();
+await warmupRuntime();
+// A second call should reuse the same warmup promise and remain safe before parsing real bytes.
+await warmupRuntime();
+
+const batchEvents = [];
 let batchCount = 0;
-let eventCount = 0;
 
 for await (const batch of parseBytesBatches(bytes, { batchSize: 16 })) {
   batchCount += 1;
-  eventCount += batch.length;
-  for (const event of batch) {
-    seen.add(event.type === 'package' ? `${event.type}:${event.phase}` : event.type);
+  batchEvents.push(...batch);
+}
+
+const streamEvents = [];
+for await (const event of parseBytes(bytes, { batchSize: 11 })) {
+  streamEvents.push(event);
+}
+
+const seen = new Set(batchEvents.map((event) => event.type));
+for (const type of ['package', 'part', 'element', 'text', 'end']) {
+  if (!seen.has(type)) {
+    throw new Error(`missing ${type} event`);
   }
 }
 
-const required = ['package:start', 'part', 'element', 'text', 'end', 'package:end'];
-const missing = required.filter((type) => !seen.has(type));
-if (missing.length > 0) {
-  throw new Error(`missing expected events: ${missing.join(', ')}`);
+if (batchCount < 2) {
+  throw new Error(`expected multiple batches, got ${batchCount}`);
 }
 
-window.__docxSaxSmokeResult = { batchCount, eventCount, seen: [...seen].sort() };
+if (streamEvents.length !== batchEvents.length) {
+  throw new Error(`parseBytes yielded ${streamEvents.length} events; parseBytesBatches yielded ${batchEvents.length}`);
+}
+
+window.__docxSaxSmokeResult = { batchCount, eventCount: batchEvents.length, seen: [...seen].sort() };
 console.log('docx-sax browser smoke ok', window.__docxSaxSmokeResult);
