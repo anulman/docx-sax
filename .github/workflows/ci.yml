@@ -67,7 +67,24 @@ jobs:
       - name: Package smoke via local tool install
         shell: pwsh
         run: |
-          dotnet tool install DocxSax.Tool --tool-path ./.smoke-tools --add-source artifacts/packages --version 0.1.0-alpha.1
+          $packageVersion = (dotnet msbuild src/DocxSax.Tool/DocxSax.Tool.csproj -getProperty:PackageVersion -nologo).Trim()
+          if ([string]::IsNullOrWhiteSpace($packageVersion)) {
+            $packageVersion = (dotnet msbuild src/DocxSax.Tool/DocxSax.Tool.csproj -getProperty:Version -nologo).Trim()
+          }
+          if ([string]::IsNullOrWhiteSpace($packageVersion)) { throw "Could not determine package version" }
+
+          $localPackageSource = (Resolve-Path artifacts/packages).Path
+          @(
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<configuration>'
+            '  <packageSources>'
+            '    <clear />'
+            '    <add key="local-packages" value="' + $localPackageSource + '" />'
+            '  </packageSources>'
+            '</configuration>'
+          ) | Set-Content NuGet.local.config
+
+          dotnet tool install DocxSax.Tool --tool-path ./.smoke-tools --configfile NuGet.local.config --version $packageVersion
           & "${{ matrix.toolExe }}" parse test/DocxSax.Tests/Fixtures/simple.docx --jsonl > package-smoke.jsonl
           $lineCount = 0
           Get-Content package-smoke.jsonl | ForEach-Object {
