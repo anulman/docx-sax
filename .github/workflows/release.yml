@@ -1,0 +1,388 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - 'clawy/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.1.0-alpha.1'
+        type: string
+        required: true
+      dry-run:
+        description: 'Run publish/deploy steps in dry-run mode'
+        type: boolean
+        default: true
+      publish-nuget:
+        description: 'Publish DocxSax NuGet packages when dry-run is false'
+        type: boolean
+        default: true
+      publish-npm:
+        description: 'Publish the docx-sax npm package when dry-run is false'
+        type: boolean
+        default: true
+      deploy-vercel:
+        description: 'Deploy the Next.js WASM demo to Vercel when dry-run is false'
+        type: boolean
+        default: true
+      npm-tag:
+        description: 'npm dist-tag for manual publish; defaults to alpha for prereleases'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  meta:
+    name: Resolve release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      dry-run: ${{ steps.meta.outputs.dry-run }}
+      publish-nuget: ${{ steps.meta.outputs.publish-nuget }}
+      publish-npm: ${{ steps.meta.outputs.publish-npm }}
+      deploy-vercel: ${{ steps.meta.outputs.deploy-vercel }}
+      npm-tag: ${{ steps.meta.outputs.npm-tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_version=$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path('Directory.Build.props').read_text()
+          match = re.search(r'<Version>([^<]+)</Version>', text)
+          if not match:
+              raise SystemExit('Directory.Build.props has no <Version>')
+          print(match.group(1))
+          PY
+          )
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+            dry_run="${{ inputs['dry-run'] }}"
+            publish_nuget="${{ inputs['publish-nuget'] }}"
+            publish_npm="${{ inputs['publish-npm'] }}"
+            deploy_vercel="${{ inputs['deploy-vercel'] }}"
+            npm_tag_input="${{ inputs['npm-tag'] || '' }}"
+            npm_tag="$npm_tag_input"
+            if [[ -n "$npm_tag_input" && "$npm_tag_input" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+-([A-Za-z0-9][A-Za-z0-9_-]*)(\.[0-9A-Za-z._-]+)?$ ]]; then
+              npm_tag="${BASH_REMATCH[1]}"
+              echo "Normalized version-like npm tag input '$npm_tag_input' to dist-tag '$npm_tag'"
+            fi
+          else
+            # Branch pushes are CI proof only: always dry-run and never publish externally.
+            version="$repo_version"
+            dry_run="true"
+            publish_nuget="false"
+            publish_npm="false"
+            deploy_vercel="false"
+            npm_tag=""
+          fi
+
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" && "$version" != "$repo_version" ]]; then
+            echo "Branch push version ($version) must match repo version ($repo_version)" >&2
+            exit 1
+          fi
+
+          if [[ -z "$npm_tag" ]]; then
+            npm_tag="latest"
+            if [[ "$version" == *-* ]]; then
+              prerelease_part="${version#*-}"
+              npm_tag="${prerelease_part%%.*}"
+            fi
+          fi
+
+          if [[ "$npm_tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+($|-.*) ]]; then
+            echo "Invalid npm dist-tag: $npm_tag. Use a channel tag such as latest, alpha, beta, rc, or next; not a version." >&2
+            exit 1
+          fi
+
+          if ! [[ "$npm_tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Invalid npm tag: $npm_tag" >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "dry-run=$dry_run"
+            echo "publish-nuget=$publish_nuget"
+            echo "publish-npm=$publish_npm"
+            echo "deploy-vercel=$deploy_vercel"
+            echo "npm-tag=$npm_tag"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Release version: $version"
+          echo "Dry run: $dry_run"
+          echo "Publish NuGet: $publish_nuget"
+          echo "Publish npm: $publish_npm"
+          echo "Deploy Vercel: $deploy_vercel"
+          echo "npm dist-tag: $npm_tag"
+
+  nuget:
+    name: NuGet packages
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build
+
+      - name: Pack NuGet packages
+        run: dotnet pack --configuration Release --no-build --output artifacts/packages -p:Version=${{ needs.meta.outputs.version }}
+
+      - name: NuGet push dry run via local feed
+        if: needs.meta.outputs.dry-run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nuget-feed"
+          for package in artifacts/packages/*.nupkg; do
+            dotnet nuget push "$package" --source "$RUNNER_TEMP/nuget-feed" --skip-duplicate
+          done
+          find "$RUNNER_TEMP/nuget-feed" -type f -name '*.nupkg' -print
+
+      - name: Upload NuGet artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-nuget-packages
+          path: artifacts/packages/*.nupkg
+
+  nuget-publish:
+    name: Publish NuGet packages
+    needs: [meta, nuget]
+    if: needs.meta.outputs.dry-run == 'false' && needs.meta.outputs.publish-nuget == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Download NuGet artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-nuget-packages
+          path: artifacts/packages
+
+      - name: NuGet login with trusted publishing
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish NuGet packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in artifacts/packages/*.nupkg; do
+            dotnet nuget push "$package" --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+          done
+
+  npm:
+    name: npm packages
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Apply npm package version
+        env:
+          RELEASE_VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const version = process.env.RELEASE_VERSION;
+
+          function writeJson(path, json) {
+            fs.writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
+          }
+
+          const packageJsonPath = 'packages/docx-sax/package.json';
+          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+          packageJson.version = version;
+          writeJson(packageJsonPath, packageJson);
+
+          const lockPath = 'packages/docx-sax/package-lock.json';
+          const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+          lock.version = version;
+          if (lock.packages?.['']) lock.packages[''].version = version;
+          writeJson(lockPath, lock);
+
+          console.log(`packages/docx-sax version set to ${version}`);
+          NODE
+
+      - name: Setup .NET WASM workloads
+        run: dotnet workload install wasm-tools wasm-experimental
+
+      - name: Validate npm package version
+        run: test "$(node -p "require('./packages/docx-sax/package.json').version")" = "${{ needs.meta.outputs.version }}"
+
+      - name: Build and test npm package
+        working-directory: packages/docx-sax
+        run: |
+          npm ci
+          npm run build
+          npm run test:node
+          npx playwright install --with-deps chromium
+          npm run test:browser
+
+      - name: Pack npm package artifact
+        working-directory: packages/docx-sax
+        run: |
+          set -euo pipefail
+          mkdir -p ../../artifacts/npm
+          npm pack --pack-destination ../../artifacts/npm
+
+      - name: npm publish dry run
+        if: needs.meta.outputs.dry-run == 'true'
+        working-directory: packages/docx-sax
+        run: npm publish --dry-run --access public --tag "${{ needs.meta.outputs.npm-tag }}"
+
+      - name: Upload npm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-npm-packages
+          path: artifacts/npm/*
+          if-no-files-found: ignore
+
+  npm-publish:
+    name: Publish npm package
+    needs: [meta, npm]
+    if: needs.meta.outputs.dry-run == 'false' && needs.meta.outputs.publish-npm == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Download npm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-npm-packages
+          path: artifacts/npm
+
+      - name: Publish npm package with trusted publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          package=$(find artifacts/npm -maxdepth 1 -type f -name 'docx-sax-*.tgz' | head -n 1)
+          test -n "$package"
+          npm publish "$package" --provenance --access public --tag "${{ needs.meta.outputs.npm-tag }}"
+
+  vercel-demo:
+    name: Vercel demo
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Apply demo package version
+        env:
+          RELEASE_VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const version = process.env.RELEASE_VERSION;
+
+          function writeJson(path, json) {
+            fs.writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
+          }
+
+          const packageJsonPath = 'packages/docx-sax/package.json';
+          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+          packageJson.version = version;
+          writeJson(packageJsonPath, packageJson);
+
+          for (const lockPath of ['packages/docx-sax/package-lock.json', 'demos/nextjs-wasm/package-lock.json']) {
+            const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+            lock.version = version;
+            if (lock.packages?.['']) lock.packages[''].version = version;
+            if (lock.packages?.['node_modules/docx-sax']) lock.packages['node_modules/docx-sax'].version = version;
+            if (lock.dependencies?.['docx-sax']) lock.dependencies['docx-sax'].version = version;
+            writeJson(lockPath, lock);
+          }
+
+          console.log(`demo docx-sax package version set to ${version}`);
+          NODE
+
+      - name: Setup .NET WASM workloads
+        run: dotnet workload install wasm-tools wasm-experimental
+
+      - name: Build demo
+        working-directory: demos/nextjs-wasm
+        run: |
+          npm ci
+          npm run build
+
+      - name: Vercel dry run
+        if: needs.meta.outputs.dry-run == 'true'
+        working-directory: demos/nextjs-wasm
+        run: npx vercel --version
+
+      - name: Deploy demo to Vercel
+        if: needs.meta.outputs.dry-run == 'false' && needs.meta.outputs.deploy-vercel == 'true'
+        working-directory: demos/nextjs-wasm
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN"
+          test -n "$VERCEL_ORG_ID"
+          test -n "$VERCEL_PROJECT_ID"
+          npx vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+          npx vercel build --prod --token "$VERCEL_TOKEN"
+          npx vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"

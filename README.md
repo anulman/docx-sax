@@ -12,12 +12,12 @@ This repository currently contains the core .NET library scaffold, a minimal for
 
 The public JavaScript wrappers share one event model and differ only by input transport:
 
-- `@docx-sax/node` accepts file paths with `parseFile(path, options)` and `parseFileBatches(path, options)`.
-- `@docx-sax/browser` accepts bytes/blob inputs with `parseBytes(input, options)` and `parseBytesBatches(input, options)`.
+- `docx-sax/node` accepts file paths with `parseFile(path, options)` and `parseFileBatches(path, options)`.
+- `docx-sax/browser` accepts bytes/blob inputs with `parseBytes(input, options)` and `parseBytesBatches(input, options)`.
 
 All four functions return async iterables over the same `DocxSaxEvent` object union. The non-batched helpers yield one event at a time; the batched helpers yield `DocxSaxEvent[]` chunks and accept the shared `{ batchSize }` option. Transport-specific options stay transport-specific (`nativeLibraryPath` for Node, `dotnetModuleUrl` for browser/WASM).
 
-Both packages ship TypeScript declarations for the common event union: package/part lifecycle events, relationships, XML element starts/ends, text events, diagnostics, attributes, ordinals, paths, namespaces, and part URIs. The wrappers intentionally do not expose a whole-document array API; consumers should iterate the stream or batches.
+The package ships TypeScript declarations for the common event union: package/part lifecycle events, relationships, XML element starts/ends, text events, diagnostics, attributes, ordinals, paths, namespaces, and part URIs. The wrappers intentionally do not expose a whole-document array API; consumers should iterate the stream or batches.
 
 ## Non-goals
 
@@ -118,7 +118,7 @@ for await (const event of parseFile('document.docx')) {
 }
 
 for await (const batch of parseFileBatches('document.docx', { batchSize: 256 })) {
-    // batch is DocxSaxEvent[] from the same model used by @docx-sax/browser
+    // batch is DocxSaxEvent[] from the same model used by docx-sax/browser
 }
 ```
 
@@ -133,7 +133,7 @@ const response = await fetch('/document.docx');
 const bytes = new Uint8Array(await response.arrayBuffer());
 
 for await (const batch of parseBytesBatches(bytes, { batchSize: 256 })) {
-    // batch is DocxSaxEvent[] from the same model used by @docx-sax/node
+    // batch is DocxSaxEvent[] from the same model used by docx-sax/node
 }
 
 for await (const event of parseBytes(bytes)) {
