@@ -4,7 +4,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <PublishTrimmed>false</PublishTrimmed>
+    <PublishTrimmed>true</PublishTrimmed>
+    <!--
+      The browser target only uses the typed DocxSax/OpenXML reader, but net8 browser-wasm
+      still reports a framework IL2104 warning from System.Linq.Expressions while trimming.
+      Keep linker diagnostics visible; do not fail publish on framework linker warnings until
+      the upstream runtime/library warning is fixed. Browser smoke/e2e tests cover runtime safety.
+    -->
+    <ILLinkTreatWarningsAsErrors>false</ILLinkTreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../DocxSax/DocxSax.csproj" />
