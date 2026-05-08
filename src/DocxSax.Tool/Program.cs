@@ -20,7 +20,7 @@ internal static class Program
         var tempPath = Path.GetTempFileName();
         try
         {
-await using (var stream = File.OpenRead(inputPath))
+            await using (var stream = File.OpenRead(inputPath))
             await using (var tempStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
             await using (var tempWriter = new StreamWriter(tempStream))
             {
