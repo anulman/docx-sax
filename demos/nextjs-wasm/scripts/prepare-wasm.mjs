@@ -1,4 +1,4 @@
-import { cp, mkdir, stat } from 'node:fs/promises';
+import { cp, mkdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,6 +14,7 @@ try {
   throw new Error(`Missing browser WASM assets at ${source}. Run \`npm run build:wasm\` from demos/nextjs-wasm or \`npm --prefix ../../packages/docx-sax run build:dotnet\` first.`);
 }
 
+await rm(target, { recursive: true, force: true });
 await mkdir(path.dirname(target), { recursive: true });
 await cp(source, target, { recursive: true, force: true });
 console.log(`Copied docx-sax WASM assets to ${path.relative(demoRoot, target)}`);

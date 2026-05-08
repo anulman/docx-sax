@@ -15,7 +15,6 @@ packages/docx-sax/node_modules/
 demos/nextjs-wasm/.next/
 demos/nextjs-wasm/.vercel/
 demos/nextjs-wasm/node_modules/
-demos/nextjs-wasm/public/docx-sax/
 demos/nextjs-wasm/playwright-report/
 demos/nextjs-wasm/test-results/
 .vite/
