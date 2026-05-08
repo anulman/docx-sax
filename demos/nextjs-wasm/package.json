@@ -10,8 +10,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test:e2e": "playwright test",
-    "test": "npm run build:wasm && npm run build && npm run test:e2e"
+    "test:e2e": "npm run build:wasm && playwright test",
+    "test": "npm run build && npm run test:e2e"
   },
   "dependencies": {
     "docx-sax": "file:../../packages/docx-sax",
