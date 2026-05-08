@@ -48,7 +48,8 @@ public sealed class DocxSaxReader
                 yield return relationship;
             }
 
-            foreach (var docxEvent in ReadPart(mainDocumentPart, ordinals))
+            var visitedParts = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var docxEvent in ReadPart(mainDocumentPart, ordinals, visitedParts))
             {
                 yield return docxEvent;
             }
@@ -71,27 +72,54 @@ public sealed class DocxSaxReader
             IsExternal: false);
     }
 
-    private static IEnumerable<DocxEvent> ReadPart(OpenXmlPart part, OrdinalCounter ordinals)
+    private static IEnumerable<DocxEvent> ReadPart(OpenXmlPart part, OrdinalCounter ordinals, ISet<string> visitedParts)
     {
         var partUri = part.Uri.ToString();
+        if (!visitedParts.Add(partUri))
+        {
+            yield break;
+        }
+
         yield return new PartEvent(DocxEventKind.PartStart, ordinals.Next(), partUri, part.ContentType, part.RelationshipType);
 
-        foreach (var relationship in ReadPartRelationships(part, partUri, ordinals))
+        var childParts = part.Parts.OrderBy(pair => pair.RelationshipId, StringComparer.Ordinal).ToArray();
+        foreach (var relationship in ReadPartRelationships(part, partUri, childParts, ordinals))
         {
             yield return relationship;
         }
 
-        foreach (var xmlEvent in ReadXml(part, partUri, ordinals))
+        if (IsXmlContentType(part.ContentType))
         {
-            yield return xmlEvent;
+            foreach (var xmlEvent in ReadXml(part, partUri, ordinals))
+            {
+                yield return xmlEvent;
+            }
+        }
+
+        foreach (var child in childParts)
+        {
+            foreach (var childEvent in ReadPart(child.OpenXmlPart, ordinals, visitedParts))
+            {
+                yield return childEvent;
+            }
         }
 
         yield return new PartEvent(DocxEventKind.PartEnd, ordinals.Next(), partUri, part.ContentType, part.RelationshipType);
     }
 
-    private static IEnumerable<RelationshipEvent> ReadPartRelationships(OpenXmlPart part, string partUri, OrdinalCounter ordinals)
+    private static bool IsXmlContentType(string contentType) =>
+        contentType.EndsWith("+xml", StringComparison.OrdinalIgnoreCase) ||
+        contentType.EndsWith("/xml", StringComparison.OrdinalIgnoreCase) ||
+        contentType.Equals("application/xml", StringComparison.OrdinalIgnoreCase) ||
+        contentType.Equals("text/xml", StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<RelationshipEvent> ReadPartRelationships(
+        OpenXmlPart part,
+        string partUri,
+        IReadOnlyList<IdPartPair> childParts,
+        OrdinalCounter ordinals)
     {
-        foreach (var child in part.Parts.OrderBy(pair => pair.RelationshipId, StringComparer.Ordinal))
+        foreach (var child in childParts)
         {
             yield return new RelationshipEvent(
                 ordinals.Next(),

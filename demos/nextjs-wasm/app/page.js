@@ -11,28 +11,36 @@ function emptySummary() {
 
 function renderPreview(events) {
   const paragraphs = [];
-  let current = '';
+  const textSnippets = [];
+  let currentParagraph = '';
 
   for (const event of events) {
     if (event.type === 'text' && !event.isWhitespace && event.text) {
-      current += event.text;
+      currentParagraph += event.text;
+      textSnippets.push(event.text.trim());
     }
 
     if (event.type === 'end' && event.localName === 'p') {
-      const text = current.trim();
+      const text = currentParagraph.trim();
       if (text.length > 0) {
         paragraphs.push(text);
       }
-      current = '';
+      currentParagraph = '';
     }
   }
 
-  const trailing = current.trim();
-  if (trailing.length > 0) {
+  const trailing = currentParagraph.trim();
+  if (trailing.length > 0 && paragraphs.length > 0) {
     paragraphs.push(trailing);
   }
 
-  return paragraphs;
+  if (paragraphs.length > 0) {
+    return paragraphs;
+  }
+
+  // Some valid DOCX packages carry useful text outside Word paragraphs, for example chart
+  // caches under c:v/c:f. Surface those text events instead of leaving Preview blank.
+  return [...new Set(textSnippets.filter(Boolean))].slice(0, 40);
 }
 
 export default function Home() {
