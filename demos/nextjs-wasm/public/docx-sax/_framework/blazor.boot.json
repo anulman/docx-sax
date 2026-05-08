@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "DocxSax.Browser",
   "resources": {
-    "hash": "sha256-UPp8WihWpc4XYFrY/Gn6J1zv4PuRPSuZwdXuFasn6DI=",
+    "hash": "sha256-MXZXUl+Vm3OnBhhA1wFSihuFOvpC41B9fm97H8Qq4X4=",
     "jsModuleNative": {
       "dotnet.native.8.0.26.smrpdtzymm.js": "sha256-+OpRxxdcqlMlmktq/t8R3CnwAYXdhf696NBUxhI56xc="
     },
@@ -14,8 +14,8 @@
     "assembly": {
       "DocumentFormat.OpenXml.Framework.wasm": "sha256-t6kaCMIC/KNOYiCLe6e43r3FcC9KZcw8k8F1blF7XxY=",
       "DocumentFormat.OpenXml.wasm": "sha256-amv7icVrUtGmfPyNzAwJFqsP+YA5L4MjxpoReXq1pho=",
-      "DocxSax.Browser.wasm": "sha256-2fGX0cBpAByE8PFBmv/EXfhmMTRmydWQFAKhHimeupc=",
-      "DocxSax.wasm": "sha256-Se1/HRTP7lDUTwkOPGvvR0qtHNHo3DWmSSfvp4nciF4=",
+      "DocxSax.Browser.wasm": "sha256-qtw5xMBGu5rOr/YO15adZTOkZeoBsD2xD0mVGHSpI+A=",
+      "DocxSax.wasm": "sha256-06vQeXrwlLWP+NI155mRakwk5lC9XQamkhBYI8oe0DY=",
       "Microsoft.CSharp.wasm": "sha256-Sdwr77LfnE/jgnAfkLzawMV5zJ/YnUhFonCjclvUe8A=",
       "Microsoft.VisualBasic.Core.wasm": "sha256-Y+aM4cUfA1DezOZ0J7UpdE2EqoXEc8mG73va0r5Cf/4=",
       "Microsoft.VisualBasic.wasm": "sha256-9o+SF0Q4EMSY0LrzBQyqOmjsGb7bLHZabjxwihlIFLM=",

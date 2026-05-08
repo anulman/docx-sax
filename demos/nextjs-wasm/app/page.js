@@ -6,6 +6,9 @@ import { parseBytesBatches, preloadRuntime, warmupRuntime } from 'docx-sax/brows
 const DOTNET_MODULE_URL = '/docx-sax/_framework/dotnet.js';
 const INITIAL_STATUS = 'Choose a .docx file to parse it in your browser.';
 const PREVIEW_UPDATE_INTERVAL_MS = 100;
+const MAX_PREVIEW_PARAGRAPHS = 80;
+const MAX_FALLBACK_SNIPPETS = 40;
+const MAX_DIAGNOSTICS = 20;
 
 function emptySummary() {
   return { events: 0, textEvents: 0, parts: new Set(), diagnostics: [] };
@@ -20,28 +23,40 @@ function cloneSummary(summary) {
   };
 }
 
-function renderPreview(events) {
-  const paragraphs = [];
-  const textSnippets = [];
-  let currentParagraph = '';
+function createPreviewState() {
+  return {
+    paragraphs: [],
+    fallbackSnippets: [],
+    fallbackSeen: new Set(),
+    currentParagraph: '',
+  };
+}
 
-  for (const event of events) {
+function appendPreviewBatch(preview, batch) {
+  for (const event of batch) {
     if (event.type === 'text' && !event.isWhitespace && event.text) {
-      currentParagraph += event.text;
-      textSnippets.push(event.text.trim());
+      preview.currentParagraph += event.text;
+      const snippet = event.text.trim();
+      if (snippet && preview.fallbackSnippets.length < MAX_FALLBACK_SNIPPETS && !preview.fallbackSeen.has(snippet)) {
+        preview.fallbackSeen.add(snippet);
+        preview.fallbackSnippets.push(snippet);
+      }
     }
 
     if (event.type === 'end' && event.localName === 'p') {
-      const text = currentParagraph.trim();
-      if (text.length > 0) {
-        paragraphs.push(text);
+      const text = preview.currentParagraph.trim();
+      if (text.length > 0 && preview.paragraphs.length < MAX_PREVIEW_PARAGRAPHS) {
+        preview.paragraphs.push(text);
       }
-      currentParagraph = '';
+      preview.currentParagraph = '';
     }
   }
+}
 
-  const trailing = currentParagraph.trim();
-  if (trailing.length > 0 && paragraphs.length > 0) {
+function previewParagraphs(preview, includeTrailing = false) {
+  const paragraphs = [...preview.paragraphs];
+  const trailing = preview.currentParagraph.trim();
+  if (includeTrailing && trailing.length > 0 && paragraphs.length > 0 && paragraphs.length < MAX_PREVIEW_PARAGRAPHS) {
     paragraphs.push(trailing);
   }
 
@@ -51,7 +66,7 @@ function renderPreview(events) {
 
   // Some valid DOCX packages carry useful text outside Word paragraphs, for example chart
   // caches under c:v/c:f. Surface those text events instead of leaving Preview blank.
-  return [...new Set(textSnippets.filter(Boolean))].slice(0, 40);
+  return preview.fallbackSnippets;
 }
 
 export default function Home() {
@@ -112,7 +127,7 @@ export default function Home() {
     setStatus('Loading WASM runtime and parsing DOCX…');
 
     try {
-      const events = [];
+      const preview = createPreviewState();
       const nextSummary = emptySummary();
       let lastPreviewUpdate = 0;
 
@@ -120,25 +135,26 @@ export default function Home() {
       // parseFileBatches(path); the browser wrapper only differs in accepting bytes/blob input and
       // a dotnetModuleUrl. The WASM bridge is pull-based, so each loop gets a real parsed batch.
       for await (const batch of parseBytesBatches(file, { batchSize: 128, dotnetModuleUrl: DOTNET_MODULE_URL })) {
-        events.push(...batch);
+        appendPreviewBatch(preview, batch);
         for (const event of batch) {
           nextSummary.events += 1;
           if (event.partUri) nextSummary.parts.add(event.partUri);
           if (event.type === 'text' && !event.isWhitespace) nextSummary.textEvents += 1;
-          if (event.type === 'diagnostic') nextSummary.diagnostics.push(event.message);
+          if (event.type === 'diagnostic' && nextSummary.diagnostics.length < MAX_DIAGNOSTICS) {
+            nextSummary.diagnostics.push(event.message);
+          }
         }
 
         const now = performance.now();
         if (now - lastPreviewUpdate >= PREVIEW_UPDATE_INTERVAL_MS) {
           lastPreviewUpdate = now;
-          setParagraphs(renderPreview(events));
+          setParagraphs(previewParagraphs(preview));
           setSummary(cloneSummary(nextSummary));
           setStatus(`Parsed ${nextSummary.events} events from ${file.name}…`);
         }
       }
 
-      const nextParagraphs = renderPreview(events);
-      setParagraphs(nextParagraphs);
+      setParagraphs(previewParagraphs(preview, true));
       setSummary(cloneSummary(nextSummary));
       setStatus(`Parsed ${nextSummary.events} events from ${file.name}.`);
     } catch (err) {

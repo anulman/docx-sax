@@ -16,5 +16,9 @@ try {
 
 await rm(target, { recursive: true, force: true });
 await mkdir(path.dirname(target), { recursive: true });
-await cp(source, target, { recursive: true, force: true });
+await cp(source, target, {
+  recursive: true,
+  force: true,
+  filter: (entry) => !/\.pdb(\.|$)/i.test(path.basename(entry)),
+});
 console.log(`Copied docx-sax WASM assets to ${path.relative(demoRoot, target)}`);
