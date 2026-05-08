@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { parseFile, parseFileBatches } from '../index.js';
+import { parseFile, parseFileBatches } from '../node.js';
 import { assertCommonDocxSaxEventModel, collectEventShapeSummary } from '../../../test/js/common-event-shape.mjs';
 import { createGeneratedDocxBytes } from '../../../test/js/generated-docx.mjs';
 

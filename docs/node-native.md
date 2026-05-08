@@ -1,20 +1,20 @@
 # Node native wrapper
 
-`packages/node` contains a v0 Node wrapper for the typed `DocxSaxReader` event stream. It is intentionally not a CLI/stdout adapter: Node calls a N-API addon, the addon loads the .NET Native AOT shared library, and the native library calls back with JSON batches.
+`packages/docx-sax` contains a v0 Node wrapper for the typed `DocxSaxReader` event stream. It is intentionally not a CLI/stdout adapter: Node calls a N-API addon, the addon loads the .NET Native AOT shared library, and the native library calls back with JSON batches.
 
-The public API is transport-neutral above the file input boundary: `parseFile()` yields the same `DocxSaxEvent` objects that `@docx-sax/browser` yields from `parseBytes()`, and `parseFileBatches()` yields `DocxSaxEvent[]` batches. The shared option is `{ batchSize }`; Node additionally supports `{ nativeLibraryPath }` for local/native bridge validation.
+The public API is transport-neutral above the file input boundary: `parseFile()` yields the same `DocxSaxEvent` objects that `@docxdocx-sax/browser` yields from `parseBytes()`, and `parseFileBatches()` yields `DocxSaxEvent[]` batches. The shared option is `{ batchSize }`; Node additionally supports `{ nativeLibraryPath }` for local/native bridge validation.
 
 ## Usage
 
 ```js
-import { parseFile, parseFileBatches } from '@docx-sax/node';
+import { parseFile, parseFileBatches } from 'docx-sax/node';
 
 for await (const event of parseFile('document.docx')) {
   console.log(event.type, event.ordinal);
 }
 
 for await (const batch of parseFileBatches('document.docx', { batchSize: 256 })) {
-  // batch is DocxSaxEvent[], matching @docx-sax/browser parseBytesBatches()
+  // batch is DocxSaxEvent[], matching @docxdocx-sax/browser parseBytesBatches()
 }
 ```
 
@@ -25,13 +25,13 @@ The default export also exposes `parseFile` and `parseFileBatches`. TypeScript d
 From the repo root:
 
 ```bash
-cd packages/node
+cd packages/docx-sax
 npm install
 npm run build
 npm test
 ```
 
-`npm run build` publishes `src/DocxSax.Native` as a Native AOT shared library into `packages/node/native/linux-x64/`, then builds the N-API addon with `node-gyp`.
+`npm run build:node` publishes `src/DocxSax.Native` as a Native AOT shared library into `packages/docx-sax/native/linux-x64/`, then builds the N-API addon with `node-gyp`.
 
 ## Transport caveats
 

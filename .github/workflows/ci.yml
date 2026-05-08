@@ -104,11 +104,11 @@ jobs:
 
       - name: Node N-API wrapper smoke
         if: matrix.rid == 'linux-x64'
-        working-directory: packages/node
+        working-directory: packages/docx-sax
         run: |
           npm ci
-          npm run build
-          npm test
+          npm run build:node
+          npm run test:node
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4

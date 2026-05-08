@@ -22,7 +22,7 @@ DocxSax.sln
 src/DocxSax/          # .NET 8 typed event reader library
 src/DocxSax.Tool/     # .NET 8 CLI/global-tool JSONL adapter
 src/DocxSax.Native/   # .NET 8 Native AOT C ABI bridge for Node/native hosts
-packages/node/        # Node N-API wrapper package
+packages/docx-sax/   # Node N-API wrapper package
 test/DocxSax.Tests/   # generated DOCX fixtures, golden JSONL, and tests
 docs/                 # design notes as the project grows
 ```
@@ -44,7 +44,7 @@ dotnet test --configuration Release
 dotnet format --verify-no-changes --verbosity minimal
 dotnet pack --configuration Release --output artifacts/packages
 
-cd packages/node
+cd packages/docx-sax
 npm install
 npm run build
 npm test
@@ -96,7 +96,7 @@ Event `type` values:
 ## Node wrapper usage
 
 ```js
-import { parseFile, parseFileBatches } from '@docx-sax/node';
+import { parseFile, parseFileBatches } from 'docx-sax/node';
 
 for await (const event of parseFile('document.docx')) {
     console.log(event.type, event.ordinal);

@@ -65,11 +65,15 @@ struct NativeLibrary {
     const char* message = dlerror();
     if (message != nullptr || loaded_symbol == nullptr) {
       error = message == nullptr ? "missing docx_sax_parse_file_json_batches export" : message;
+      // Symbol validation failed before the .NET Native AOT entrypoint could run,
+      // so this handle is not a process-lifetime managed runtime yet.
+      dlclose(handle);
       return false;
     }
 
-    // .NET Native AOT libraries are process-lifetime components in this bridge;
-    // dlclose after managed runtime initialization can crash on process teardown.
+    // Once the required export is validated, treat .NET Native AOT libraries as
+    // process-lifetime components; dlclose after managed runtime initialization
+    // can crash on process teardown.
     Cache().emplace(path, CachedLibrary{handle, loaded_symbol});
     symbol = loaded_symbol;
     return true;

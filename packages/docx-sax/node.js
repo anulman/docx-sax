@@ -9,7 +9,7 @@ const packageDir = dirname(fileURLToPath(import.meta.url));
 
 function defaultNativeLibraryPath() {
   if (process.platform !== 'linux' || process.arch !== 'x64') {
-    throw new Error(`@docx-sax/node v0 currently ships a linux-x64 native bridge only (got ${process.platform}-${process.arch})`);
+    throw new Error(`docx-sax/node v0 currently ships a linux-x64 native bridge only (got ${process.platform}-${process.arch})`);
   }
 
   return join(packageDir, 'native', 'linux-x64', 'DocxSax.Native.so');
@@ -29,7 +29,7 @@ function normalizeOptions(options = {}) {
  *
  * @param {string} path
  * @param {{ batchSize?: number, nativeLibraryPath?: string }} [options]
- * @returns {AsyncGenerator<import('./index.d.ts').DocxSaxEvent[], void, void>}
+ * @returns {AsyncGenerator<import('./node.d.ts').DocxSaxEvent[], void, void>}
  */
 export async function* parseFileBatches(path, options = {}) {
   if (typeof path !== 'string' || path.length === 0) {
@@ -60,7 +60,7 @@ export async function* parseFileBatches(path, options = {}) {
  *
  * @param {string} path
  * @param {{ batchSize?: number, nativeLibraryPath?: string }} [options]
- * @returns {AsyncGenerator<import('./index.d.ts').DocxSaxEvent, void, void>}
+ * @returns {AsyncGenerator<import('./node.d.ts').DocxSaxEvent, void, void>}
  */
 export async function* parseFile(path, options = {}) {
   for await (const batch of parseFileBatches(path, options)) {
