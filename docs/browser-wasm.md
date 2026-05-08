@@ -50,6 +50,22 @@ for await (const batch of parseBytesBatches(bytes, {
 }
 ```
 
+## Next.js demo
+
+`demos/nextjs-wasm` provides a small browser-only demo for Next.js/Vercel validation. It imports `@docx-sax/browser` from the local package, passes `dotnetModuleUrl: '/docx-sax/_framework/dotnet.js'`, and renders a simple preview from parsed event-stream `text` records. The checked-in fixtures are public/generated regression fixtures, not private corpus files.
+
+The demo intentionally separates heavy WASM preparation from the generic Next build:
+
+```bash
+cd demos/nextjs-wasm
+npm install
+npm run build:wasm   # dotnet publish + copy public/docx-sax/_framework
+npm run build        # Next/Vercel build only
+npm run test:e2e     # Playwright upload -> WASM load -> parse -> render smoke
+```
+
+Use `npm test` in the demo directory to run all three steps locally. For Vercel, keep `npm run build` as the build command and feed `public/docx-sax/_framework` from CI/package prep; otherwise Vercel will pay the full .NET browser publish cost on every build.
+
 ## Local validation
 
 ```bash
