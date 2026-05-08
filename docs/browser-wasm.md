@@ -40,6 +40,10 @@ for await (const event of parseBytes(bytes)) {
 ```
 
 The default loader expects the published .NET assets at `./dist/wasm/wwwroot/_framework/dotnet.js` relative to `packages/docx-sax/browser.js`. Pass `dotnetModuleUrl` if a bundler relocates the assets:
+TypeScript declarations are included for the shared `DocxSaxEvent` union: `package`, `part`, `relationship`, `element`, `text`, `end`, and `diagnostic` events plus shared XML attribute shapes.
+
+The default loader expects the published .NET assets at `./dist/wasm/wwwroot/_framework/dotnet.js` relative to `packages/docx-sax/browser.js`. Pass `dotnetModuleUrl` if a bundler relocates the assets:
+
 
 ```js
 for await (const batch of parseBytesBatches(bytes, {
@@ -55,10 +59,10 @@ for await (const batch of parseBytesBatches(bytes, {
 cd packages/docx-sax
 npm ci
 npx playwright install chromium
-npm test
+npm run test:browser
 ```
 
-`npm test` publishes the .NET browser-wasm project, starts a Vite server, loads the bridge in Chromium, fetches the public/generated `simple.docx` fixture, and verifies package/part/element/text/end events are observed.
+`npm run test:browser` publishes the .NET browser-wasm project, starts a Vite server, loads the bridge in Chromium, fetches the public/generated `simple.docx` fixture, and verifies package/part/element/text/end events are observed.
 
 CI runs the same browser smoke on the Linux leg. It is intentionally Linux-only for now because Playwright browser installation is the heaviest new dependency and the Node native wrapper is also Linux-first.
 

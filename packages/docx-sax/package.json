@@ -10,6 +10,7 @@
       "default": "./node.js"
     },
     "./browser": {
+      "types": "./browser.d.ts",
       "import": "./browser.js",
       "default": "./browser.js"
     }
@@ -18,9 +19,13 @@
     "node.js",
     "node.d.ts",
     "browser.js",
+    "browser.d.ts",
     "build/Release/docx_sax_node.node",
     "native/linux-x64/DocxSax.Native.so",
-    "dist/wasm/"
+    "dist/wasm/wwwroot/_framework/**",
+    "!dist/wasm/wwwroot/_framework/*.pdb*",
+    "!dist/wasm/wwwroot/_framework/*.br",
+    "!dist/wasm/wwwroot/_framework/*.gz"
   ],
   "scripts": {
     "build:node:dotnet": "dotnet publish ../../src/DocxSax.Native/DocxSax.Native.csproj --configuration Release --runtime linux-x64 --self-contained true -p:PublishAot=true -p:PublishDir=$PWD/native/linux-x64/",

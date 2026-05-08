@@ -102,7 +102,7 @@ export async function warmupRuntime(options = {}) {
  *
  * @param {Uint8Array | ArrayBuffer | ArrayBufferView | Blob} input
  * @param {{ batchSize?: number, dotnetModuleUrl?: string }} [options]
- * @returns {AsyncGenerator<object[], void, void>}
+ * @returns {AsyncGenerator<import('./index.d.ts').DocxSaxEvent[], void, void>}
  */
 export async function* parseBytesBatches(input, options = {}) {
   const bytes = await toUint8Array(input);
@@ -146,7 +146,7 @@ export async function* parseBytesBatches(input, options = {}) {
  *
  * @param {Uint8Array | ArrayBuffer | ArrayBufferView | Blob} input
  * @param {{ batchSize?: number, dotnetModuleUrl?: string }} [options]
- * @returns {AsyncGenerator<object, void, void>}
+ * @returns {AsyncGenerator<import('./index.d.ts').DocxSaxEvent, void, void>}
  */
 export async function* parseBytes(input, options = {}) {
   for await (const batch of parseBytesBatches(input, options)) {
