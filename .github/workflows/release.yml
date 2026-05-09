@@ -1,9 +1,6 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - 'clawy/**'
   workflow_dispatch:
     inputs:
       version:
@@ -11,7 +8,7 @@ on:
         type: string
         required: true
       dry-run:
-        description: 'Run publish/deploy steps in dry-run mode'
+        description: 'Run publish steps in dry-run mode'
         type: boolean
         default: true
       publish-nuget:
