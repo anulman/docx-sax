@@ -12,7 +12,7 @@ import { createGeneratedDocxBytes } from '../../../test/js/generated-docx.mjs';
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixture = join(repoRoot, 'test', 'DocxSax.Tests', 'Fixtures', 'simple.docx');
 
-test('parseFileBatches yields native JSON event batches', async () => {
+test('parseFileBatches yields native event object batches', async () => {
   const batches = [];
   for await (const batch of parseFileBatches(fixture, { batchSize: 5 })) {
     batches.push(batch);
