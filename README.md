@@ -6,7 +6,7 @@ The core is a .NET 8 library built on the Microsoft Open XML SDK. It exposes Ope
 
 ## Current status
 
-This repository currently contains the core .NET library scaffold, a minimal forward-only reader for simple Word documents, and a CLI JSONL adapter over the typed event stream. Later stacked work can build Node N-API, WASM, and demo surfaces on top of the typed core API.
+This repository currently contains the core .NET library scaffold, a minimal forward-only reader for simple Word documents, a CLI JSONL adapter over the typed event stream, and an initial Linux x64 Node N-API wrapper backed by a .NET Native AOT shared library.
 
 ## Non-goals
 
@@ -21,6 +21,8 @@ This repository currently contains the core .NET library scaffold, a minimal for
 DocxSax.sln
 src/DocxSax/          # .NET 8 typed event reader library
 src/DocxSax.Tool/     # .NET 8 CLI/global-tool JSONL adapter
+src/DocxSax.Native/   # .NET 8 Native AOT C ABI bridge for Node/native hosts
+packages/docx-sax/   # Node N-API wrapper package
 test/DocxSax.Tests/   # generated DOCX fixtures, golden JSONL, and tests
 docs/                 # design notes as the project grows
 ```
@@ -29,7 +31,7 @@ docs/                 # design notes as the project grows
 
 1. Core .NET typed event API.
 2. CLI JSONL adapter over the typed API (this layer).
-3. Node N-API bindings.
+3. Node N-API bindings (initial Linux x64 v0 is present).
 4. WASM package.
 5. Next.js demo using the public adapters.
 
@@ -41,9 +43,14 @@ dotnet build --configuration Release
 dotnet test --configuration Release
 dotnet format --verify-no-changes --verbosity minimal
 dotnet pack --configuration Release --output artifacts/packages
+
+cd packages/docx-sax
+npm install
+npm run build
+npm test
 ```
 
-CI runs these checks on Ubuntu, Windows, and macOS with .NET 8. It also uploads Cobertura coverage artifacts, validates that CLI JSONL output parses line-by-line as JSON, installs the packed `DocxSax.Tool` from the local package output, and performs a Native AOT publish check for the CLI on each runner RID.
+CI runs these checks on Ubuntu, Windows, and macOS with .NET 8. It also uploads Cobertura coverage artifacts, validates that CLI JSONL output parses line-by-line as JSON, installs the packed `DocxSax.Tool` from the local package output, and performs a Native AOT publish check for the CLI on each runner RID. The Linux leg additionally builds and tests the Node N-API wrapper.
 
 NuGet package IDs:
 
@@ -85,6 +92,22 @@ Event `type` values:
 - `text` for XML text-like nodes, including text, depth, path, and whitespace flag
 - `end` for XML element ends
 - `diagnostic` for non-fatal reader diagnostics
+
+## Node wrapper usage
+
+```js
+import { parseFile, parseFileBatches } from 'docx-sax/node';
+
+for await (const event of parseFile('document.docx')) {
+    console.log(event.type, event.ordinal);
+}
+
+for await (const batch of parseFileBatches('document.docx', { batchSize: 256 })) {
+    // batch is an array of low-level events from the native bridge
+}
+```
+
+See [`docs/node-native.md`](docs/node-native.md) for local validation and current transport caveats. The v0 package validates on Linux x64 first.
 
 ## Minimal library usage
 

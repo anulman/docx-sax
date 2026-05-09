@@ -7,3 +7,6 @@ obj/
 TestResults/
 coverage/
 artifacts/
+node_modules/
+packages/docx-sax/build/
+packages/docx-sax/native/
