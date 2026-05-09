@@ -42,9 +42,96 @@ function browserBridge(exports) {
 }
 
 function supportsPullBatches(bridge) {
-  return typeof bridge.BeginParseBytesJsonBatches === 'function'
-    && typeof bridge.ReadNextJsonBatch === 'function'
-    && typeof bridge.EndParseBytesJsonBatches === 'function';
+  return typeof bridge.BeginParseBytesBatches === 'function'
+    && typeof bridge.ReadNextBatch === 'function'
+    && typeof bridge.EndParseBytesBatches === 'function';
+}
+
+function mapAttributeRow(row) {
+  return {
+    name: row[0],
+    localName: row[1],
+    prefix: row[2],
+    namespaceUri: row[3],
+    value: row[4],
+  };
+}
+
+function mapEventRow(row) {
+  switch (row[0]) {
+    case 0:
+    case 1:
+      return { type: 'package', phase: row[2], ordinal: row[1] };
+    case 2:
+    case 3:
+      return {
+        type: 'part',
+        phase: row[2],
+        ordinal: row[1],
+        uri: row[3],
+        contentType: row[4],
+        relationshipType: row[5],
+      };
+    case 4:
+      return {
+        type: 'relationship',
+        ordinal: row[1],
+        sourceUri: row[6],
+        id: row[7],
+        relationshipType: row[5],
+        targetUri: row[8],
+        isExternal: row[9],
+      };
+    case 5:
+      return {
+        type: 'element',
+        ordinal: row[1],
+        partUri: row[10],
+        name: row[11],
+        localName: row[12],
+        prefix: row[13],
+        namespaceUri: row[14],
+        depth: row[15],
+        path: row[16],
+        isEmptyElement: row[17],
+        attributes: row[18].map(mapAttributeRow),
+      };
+    case 6:
+      return {
+        type: 'end',
+        ordinal: row[1],
+        partUri: row[10],
+        name: row[11],
+        localName: row[12],
+        prefix: row[13],
+        namespaceUri: row[14],
+        depth: row[15],
+        path: row[16],
+      };
+    case 7:
+      return {
+        type: 'text',
+        ordinal: row[1],
+        partUri: row[10],
+        text: row[19],
+        depth: row[15],
+        path: row[16],
+        isWhitespace: row[20],
+      };
+    case 8: {
+      const diagnostic = { type: 'diagnostic', ordinal: row[1], message: row[21] };
+      if (row[10] != null) {
+        diagnostic.partUri = row[10];
+      }
+      return diagnostic;
+    }
+    default:
+      throw new Error(`Unknown DocxSax browser event kind: ${row[0]}`);
+  }
+}
+
+function mapEventBatch(batch) {
+  return batch.map(mapEventRow);
 }
 
 function animationFrame() {
@@ -70,7 +157,7 @@ export async function preloadRuntime(options = {}) {
 }
 
 /**
- * Warm OpenXML package, XML reader, and DocxSax JSON serialization paths after the WASM runtime loads.
+ * Warm OpenXML package, XML reader, and DocxSax event mapping paths after the WASM runtime loads.
  *
  * This parses a tiny in-memory DOCX generated inside the bridge, so applications can call it during
  * idle time without exposing a user document. The warmup is cached by dotnetModuleUrl and runs once
@@ -111,25 +198,19 @@ export async function* parseBytesBatches(input, options = {}) {
   const bridge = browserBridge(exports);
 
   if (!supportsPullBatches(bridge)) {
-    const frames = bridge.ParseBytesJsonBatchFrames(bytes, batchSize);
-    for (const frame of frames.split('\n')) {
-      if (frame.length > 0) {
-        yield JSON.parse(frame);
-      }
-    }
-    return;
+    throw new Error('docx-sax browser WASM runtime does not expose pull batch parsing');
   }
 
-  const parseSessionId = bridge.BeginParseBytesJsonBatches(bytes, batchSize);
+  const parseSessionId = bridge.BeginParseBytesBatches(bytes, batchSize);
   let lastMainThreadYield = typeof performance === 'undefined' ? 0 : performance.now();
   try {
     while (true) {
-      const frame = bridge.ReadNextJsonBatch(parseSessionId);
-      if (frame == null || frame.length === 0) {
+      const batch = bridge.ReadNextBatch(parseSessionId);
+      if (batch == null || batch.length === 0) {
         break;
       }
 
-      yield JSON.parse(frame);
+      yield mapEventBatch(batch);
 
       if (typeof performance !== 'undefined' && performance.now() - lastMainThreadYield >= 16) {
         await animationFrame();
@@ -137,7 +218,7 @@ export async function* parseBytesBatches(input, options = {}) {
       }
     }
   } finally {
-    bridge.EndParseBytesJsonBatches(parseSessionId);
+    bridge.EndParseBytesBatches(parseSessionId);
   }
 }
 

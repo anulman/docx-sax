@@ -1,6 +1,5 @@
 using System.IO.Packaging;
 using System.Runtime.InteropServices.JavaScript;
-using System.Text;
 using DocxSax;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -30,41 +29,22 @@ public static partial class BrowserBridge
 
         foreach (var docxEvent in reader.Read(stream))
         {
-            _ = DocxEventJson.ToJson(docxEvent);
+            _ = ToRow(docxEvent);
             eventCount++;
         }
 
-        _ = DocxEventJson.ToJsonBatchFrames(
-            new DocxEvent[]
-            {
-                new PackageEvent(DocxEventKind.PackageStart, 0),
-                new DiagnosticEvent(1, "warmup"),
-                new PackageEvent(DocxEventKind.PackageEnd, 2),
-            },
-            batchSize: 2);
+        _ = new object?[]
+        {
+            ToRow(new PackageEvent(DocxEventKind.PackageStart, 0)),
+            ToRow(new DiagnosticEvent(1, "warmup")),
+            ToRow(new PackageEvent(DocxEventKind.PackageEnd, 2)),
+        };
 
         return eventCount;
     }
 
     [JSExport]
-    public static string ParseBytesJsonBatchFrames(byte[] bytes, int batchSize)
-    {
-        ArgumentNullException.ThrowIfNull(bytes);
-
-        try
-        {
-            using var stream = new MemoryStream(bytes, writable: false);
-            var reader = new DocxSaxReader();
-            return DocxEventJson.ToJsonBatchFrames(reader.Read(stream), batchSize);
-        }
-        catch (Exception exception) when (exception is InvalidDataException or FileFormatException or OpenXmlPackageException)
-        {
-            throw new InvalidOperationException($"docx-sax browser bridge failed to parse DOCX bytes: {exception.Message}", exception);
-        }
-    }
-
-    [JSExport]
-    public static int BeginParseBytesJsonBatches(byte[] bytes, int batchSize)
+    public static int BeginParseBytesBatches(byte[] bytes, int batchSize)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
@@ -81,44 +61,36 @@ public static partial class BrowserBridge
     }
 
     [JSExport]
-    public static string? ReadNextJsonBatch(int parseSessionId)
+    [return: JSMarshalAs<JSType.Array<JSType.Any>>]
+    public static object?[]? ReadNextBatch(int parseSessionId)
     {
         var session = GetParseSession(parseSessionId);
 
         try
         {
-            var builder = new StringBuilder();
-            builder.Append('[');
-            var count = 0;
-            while (count < session.BatchSize && session.Enumerator.MoveNext())
+            var batch = new List<object?>(session.BatchSize);
+            while (batch.Count < session.BatchSize && session.Enumerator.MoveNext())
             {
-                if (count > 0)
-                {
-                    builder.Append(',');
-                }
-
-                builder.Append(DocxEventJson.ToJson(session.Enumerator.Current));
-                count++;
+                batch.Add(ToRow(session.Enumerator.Current));
             }
 
-            if (count == 0)
+            if (batch.Count == 0)
             {
-                EndParseBytesJsonBatches(parseSessionId);
+                EndParseBytesBatches(parseSessionId);
                 return null;
             }
 
-            builder.Append(']');
-            return builder.ToString();
+            return batch.ToArray();
         }
         catch (Exception exception) when (exception is InvalidDataException or FileFormatException or OpenXmlPackageException)
         {
-            EndParseBytesJsonBatches(parseSessionId);
+            EndParseBytesBatches(parseSessionId);
             throw new InvalidOperationException($"docx-sax browser bridge failed to parse DOCX bytes: {exception.Message}", exception);
         }
     }
 
     [JSExport]
-    public static void EndParseBytesJsonBatches(int parseSessionId)
+    public static void EndParseBytesBatches(int parseSessionId)
     {
         ParseSession? session = null;
         lock (ParseSessionsLock)
@@ -131,6 +103,122 @@ public static partial class BrowserBridge
 
         session?.Dispose();
     }
+
+    private static object?[] ToRow(DocxEvent docxEvent) => docxEvent switch
+    {
+        PackageEvent package => Row(
+            docxEvent.Kind,
+            docxEvent.Ordinal,
+            phase: package.IsStart ? "start" : "end"),
+        PartEvent part => Row(
+            docxEvent.Kind,
+            docxEvent.Ordinal,
+            phase: part.IsStart ? "start" : "end",
+            uri: part.Uri,
+            contentType: part.ContentType,
+            relationshipType: part.RelationshipType),
+        RelationshipEvent relationship => Row(
+            docxEvent.Kind,
+            docxEvent.Ordinal,
+            relationshipType: relationship.RelationshipType,
+            sourceUri: relationship.SourceUri,
+            id: relationship.Id,
+            targetUri: relationship.TargetUri,
+            isExternal: relationship.IsExternal),
+        ElementStartEvent element => Row(
+            docxEvent.Kind,
+            docxEvent.Ordinal,
+            partUri: element.PartUri,
+            name: element.Name,
+            localName: element.LocalName,
+            prefix: element.Prefix,
+            namespaceUri: element.NamespaceUri,
+            depth: element.Depth,
+            path: element.Path,
+            isEmptyElement: element.IsEmptyElement,
+            attributes: element.Attributes.Select(attribute => (object?)ToAttributeRow(attribute)).ToArray()),
+        ElementEndEvent element => Row(
+            docxEvent.Kind,
+            docxEvent.Ordinal,
+            partUri: element.PartUri,
+            name: element.Name,
+            localName: element.LocalName,
+            prefix: element.Prefix,
+            namespaceUri: element.NamespaceUri,
+            depth: element.Depth,
+            path: element.Path),
+        TextEvent text => Row(
+            docxEvent.Kind,
+            docxEvent.Ordinal,
+            partUri: text.PartUri,
+            text: text.Text,
+            depth: text.Depth,
+            path: text.Path,
+            isWhitespace: text.IsWhitespace),
+        DiagnosticEvent diagnostic => Row(
+            docxEvent.Kind,
+            docxEvent.Ordinal,
+            partUri: diagnostic.PartUri,
+            message: diagnostic.Message),
+        _ => throw new InvalidOperationException($"Unsupported event type: {docxEvent.GetType().Name}"),
+    };
+
+    private static object?[] Row(
+        DocxEventKind kind,
+        long ordinal,
+        string? phase = null,
+        string? uri = null,
+        string? contentType = null,
+        string? relationshipType = null,
+        string? sourceUri = null,
+        string? id = null,
+        string? targetUri = null,
+        bool isExternal = false,
+        string? partUri = null,
+        string? name = null,
+        string? localName = null,
+        string? prefix = null,
+        string? namespaceUri = null,
+        int depth = 0,
+        string? path = null,
+        bool isEmptyElement = false,
+        object?[]? attributes = null,
+        string? text = null,
+        bool isWhitespace = false,
+        string? message = null) =>
+        [
+            (int)kind,
+            (double)ordinal,
+            phase,
+            uri,
+            contentType,
+            relationshipType,
+            sourceUri,
+            id,
+            targetUri,
+            isExternal,
+            partUri,
+            name,
+            localName,
+            prefix,
+            namespaceUri,
+            depth,
+            path,
+            isEmptyElement,
+            attributes ?? [],
+            text,
+            isWhitespace,
+            message,
+        ];
+
+    private static object?[] ToAttributeRow(DocxAttribute attribute) =>
+        [
+            attribute.Name,
+            attribute.LocalName,
+            attribute.Prefix,
+            attribute.NamespaceUri,
+            attribute.Value,
+        ];
 
     private static ParseSession GetParseSession(int parseSessionId)
     {
