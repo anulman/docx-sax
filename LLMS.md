@@ -10,10 +10,10 @@ The key design point is runtime neutrality: .NET, CLI JSONL, Node, and browser/W
 
 ## Namespaced plugin/adapter model
 
-JavaScript uses one npm package, `docx-sax`, with explicit runtime plugin subpaths:
+JavaScript v0 uses scoped packages under the `@docx-sax` org:
 
-- `docx-sax/node` for Node.js file-path parsing through the native bridge.
-- `docx-sax/browser` for browser/Vercel/Next.js parsing from bytes, typed arrays, ArrayBuffers, or Blobs through WASM.
+- `@docx-sax/node` for Node.js file-path parsing through `@docx-sax/native-linux-x64` (Linux x64 alpha).
+- `@docx-sax/browser` for browser/Vercel/Next.js parsing through browser WASM; `@docx-sax/browser` owns the WASM `_framework` assets.
 
 There is intentionally no generic root import in the current package. Pick the plugin/adapter that matches the runtime so bundlers, agents, and applications do not accidentally pull in the wrong transport.
 
@@ -63,19 +63,23 @@ dotnet run --project src/DocxSax.Tool -- parse document.docx --jsonl
 When published:
 
 ```bash
-npm install docx-sax
+# Node.js adapter:
+npm install @docx-sax/node
+# Browser/WASM adapter:
+npm install @docx-sax/browser
 ```
 
 From this repository:
 
 ```bash
-cd packages/docx-sax
 npm install
-npm run build
-npm test
+npm run build --workspace @docx-sax/native-linux-x64
+npm run test --workspace @docx-sax/native-linux-x64
+npm run build --workspace @docx-sax/browser
+npm run test --workspace @docx-sax/browser
 ```
 
-The current Node native adapter validates on Linux x64 first. The browser/WASM adapter is functional but still a large preview artifact; see `docs/browser-wasm.md` before treating it as production-ready.
+The current Native adapter validates on Linux x64 first. The browser/WASM adapter is functional but still a large preview artifact; see `docs/browser-wasm.md` before treating it as production-ready.
 
 ## Minimal usage
 
@@ -130,7 +134,7 @@ for await (const line of createInterface({ input: child.stdout })) {
 ### Node.js native adapter
 
 ```js
-import { parseFile, parseFileBatches } from 'docx-sax/node';
+import { parseFile, parseFileBatches } from '@docx-sax/node';
 
 for await (const event of parseFile('document.docx')) {
   console.log(event.type, event.ordinal);
@@ -149,7 +153,7 @@ import {
   parseBytesBatches,
   preloadRuntime,
   warmupRuntime,
-} from 'docx-sax/browser';
+} from '@docx-sax/browser';
 
 await preloadRuntime({ dotnetModuleUrl: '/docx-sax/_framework/dotnet.js' });
 await warmupRuntime({ dotnetModuleUrl: '/docx-sax/_framework/dotnet.js' });
@@ -167,7 +171,7 @@ for await (const batch of parseBytesBatches(bytes, {
   batchSize: 256,
   dotnetModuleUrl: '/docx-sax/_framework/dotnet.js',
 })) {
-  // batch is DocxSaxEvent[], matching docx-sax/node batches.
+  // batch is DocxSaxEvent[], matching @docx-sax/node batches.
 }
 ```
 
@@ -177,8 +181,8 @@ The Next.js demo in `demos/nextjs-wasm` hosts the WASM runtime under `/docx-sax/
 
 - Use **`DocxSax` (.NET library)** for native/server workloads where you want typed records, direct stream handling, and no process boundary.
 - Use **`DocxSax.Tool` / `docx-sax parse --jsonl`** for shell pipelines, debugging, cross-language process boundaries, and agents that can safely consume line-delimited JSON.
-- Use **`docx-sax/node`** for Node applications that can use the native bridge and currently target the validated Linux x64 path.
-- Use **`docx-sax/browser`** for browser, Next.js, and Vercel demos where users upload private DOCX files and parsing should happen client-side through WASM.
+- Use **`@docx-sax/node`** for Node applications that can use the native bridge and currently target the validated Linux x64 path.
+- Use **`@docx-sax/browser`** for browser, Next.js, and Vercel demos where users upload private DOCX files and parsing should happen client-side through WASM.
 
 ## Event model checklist
 
@@ -192,4 +196,4 @@ Expect events with these lowercase `type` values across adapters:
 - `end` for XML element ends
 - `diagnostic` for non-fatal parser observations
 
-For full details, read `README.md`, `docs/core-api.md`, `docs/cli-jsonl.md`, `docs/node-native.md`, and `docs/browser-wasm.md`.
+For full details, read `README.md`, `docs/core-api.md`, `docs/cli-jsonl.md`, `docs/native-node.md`, and `docs/browser-wasm.md`.

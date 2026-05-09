@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { parseBytesBatches, preloadRuntime, warmupRuntime } from 'docx-sax/browser';
+import { parseBytesBatches, preloadRuntime, warmupRuntime } from '@docx-sax/browser';
 
 const DOTNET_MODULE_URL = '/docx-sax/_framework/dotnet.js';
 const INITIAL_STATUS = 'Choose a .docx file to parse it in your browser.';
@@ -244,7 +244,7 @@ export default function Home() {
       const nextSummary = emptySummary();
       let lastPreviewUpdate = 0;
 
-      // parseBytesBatches(file) yields the same DocxSaxEvent object batches as docx-sax/node
+      // parseBytesBatches(file) yields the same DocxSaxEvent object batches as @docx-sax/node
       // parseFileBatches(path); the browser wrapper only differs in accepting bytes/blob input and
       // a dotnetModuleUrl. The WASM bridge is pull-based, so each loop gets a real parsed batch.
       for await (const batch of parseBytesBatches(file, { batchSize: 128, dotnetModuleUrl: DOTNET_MODULE_URL })) {
@@ -296,7 +296,7 @@ export default function Home() {
         <p className="eyebrow">docx-sax browser/WASM</p>
         <h1>Next.js DOCX event preview</h1>
         <p>
-          Upload a Word document and this demo loads <code>docx-sax/browser</code> client-side,
+          Upload a Word document and this demo loads <code>@docx-sax/browser</code> client-side,
           parses the DOCX through the WASM bridge, then renders text collected from the shared
           DocxSaxEvent stream used by both browser and Node wrappers.
         </p>

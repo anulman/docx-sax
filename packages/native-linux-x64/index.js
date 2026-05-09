@@ -9,7 +9,7 @@ const packageDir = dirname(fileURLToPath(import.meta.url));
 
 function defaultNativeLibraryPath() {
   if (process.platform !== 'linux' || process.arch !== 'x64') {
-    throw new Error(`docx-sax/node v0 currently ships a linux-x64 native bridge only (got ${process.platform}-${process.arch})`);
+    throw new Error(`@docx-sax/node v0 currently ships a linux-x64 native bridge only (got ${process.platform}-${process.arch})`);
   }
 
   return join(packageDir, 'native', 'linux-x64', 'DocxSax.Native.so');
@@ -25,7 +25,7 @@ function normalizeOptions(options = {}) {
 }
 
 /**
- * Parse a DOCX file path through the Node native bridge and yield arrays of transport-neutral DocxSax events.
+ * Parse a DOCX file path through the Native bridge and yield arrays of transport-neutral DocxSax events.
  *
  * @param {string} path
  * @param {{ batchSize?: number, nativeLibraryPath?: string }} [options]
@@ -56,7 +56,7 @@ export async function* parseFileBatches(path, options = {}) {
 }
 
 /**
- * Parse a DOCX file path through the Node native bridge and yield transport-neutral DocxSax events.
+ * Parse a DOCX file path through the Native bridge and yield transport-neutral DocxSax events.
  *
  * @param {string} path
  * @param {{ batchSize?: number, nativeLibraryPath?: string }} [options]

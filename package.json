@@ -1,0 +1,22 @@
+{
+  "name": "docx-sax-repo",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/node",
+    "packages/native-linux-x64",
+    "packages/browser-wasm",
+    "packages/native-darwin-arm64",
+    "packages/native-darwin-x64",
+    "packages/native-win32-x64",
+    "demos/nextjs-wasm"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -89,10 +89,10 @@ export interface DocxSaxDiagnosticEvent {
   partUri?: string | null;
 }
 
-/** Parse a DOCX file path through the Node native bridge and yield transport-neutral DocxSax events. */
+/** Parse a DOCX file path through the Native bridge and yield transport-neutral DocxSax events. */
 export function parseFile(path: string, options?: NodeParseOptions): AsyncIterable<DocxSaxEvent>;
 
-/** Parse a DOCX file path through the Node native bridge and yield arrays of transport-neutral DocxSax events. */
+/** Parse a DOCX file path through the Native bridge and yield arrays of transport-neutral DocxSax events. */
 export function parseFileBatches(path: string, options?: NodeParseOptions): AsyncIterable<DocxSaxEvent[]>;
 
 declare const defaultExport: {

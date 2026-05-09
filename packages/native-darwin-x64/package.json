@@ -1,0 +1,25 @@
+{
+  "name": "@docx-sax/native-darwin-x64",
+  "version": "0.1.0-alpha.1",
+  "description": "Placeholder native payload package for @docx-sax/node on darwin-x64. This prerelease package is for trusted-publisher/bootstrap only and does not include a runtime implementation yet.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node --check index.js",
+    "test": "node -e \"import('./index.js').then(() => console.log('placeholder package ok'))\""
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

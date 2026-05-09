@@ -1,0 +1,27 @@
+{
+  "name": "@docx-sax/node",
+  "version": "0.1.0-alpha.1",
+  "description": "Node.js adapter for DocxSax typed DOCX SAX events. v0 loads the Linux x64 native payload package.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "scripts": {
+    "build": "node --check index.js",
+    "test": "npm run build && node -e \"import('./index.js').then(m => console.log(Object.keys(m).join(',')))\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "optionalDependencies": {
+    "@docx-sax/native-linux-x64": "0.1.0-alpha.1"
+  }
+}
