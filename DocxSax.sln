@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{791327E0-AD23-4E3A-B464-9716D2007F0B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DocxSax", "src\DocxSax\DocxSax.csproj", "{2B30B52F-24C5-4198-8C6E-18DD1F813181}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{03C85C74-A9CE-4D6E-BC8D-7D19BBD25B3E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DocxSax.Tests", "test\DocxSax.Tests\DocxSax.Tests.csproj", "{1ACDE653-7CDC-4F3A-854F-7F6D14DC6B36}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2B30B52F-24C5-4198-8C6E-18DD1F813181}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B30B52F-24C5-4198-8C6E-18DD1F813181}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B30B52F-24C5-4198-8C6E-18DD1F813181}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2B30B52F-24C5-4198-8C6E-18DD1F813181}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1ACDE653-7CDC-4F3A-854F-7F6D14DC6B36}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1ACDE653-7CDC-4F3A-854F-7F6D14DC6B36}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1ACDE653-7CDC-4F3A-854F-7F6D14DC6B36}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1ACDE653-7CDC-4F3A-854F-7F6D14DC6B36}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{2B30B52F-24C5-4198-8C6E-18DD1F813181} = {791327E0-AD23-4E3A-B464-9716D2007F0B}
+		{1ACDE653-7CDC-4F3A-854F-7F6D14DC6B36} = {03C85C74-A9CE-4D6E-BC8D-7D19BBD25B3E}
+	EndGlobalSection
+EndGlobal

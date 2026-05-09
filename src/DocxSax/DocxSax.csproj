@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>DocxSax</AssemblyName>
+    <RootNamespace>DocxSax</RootNamespace>
+    <Description>Typed low-level event reader for DOCX/OpenXML packages.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DocumentFormat.OpenXml" />
+  </ItemGroup>
+</Project>

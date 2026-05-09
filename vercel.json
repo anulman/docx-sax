@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in clawy/nextjs-wasm-demo|clawy/js-unified-api) exit 1 ;; *) exit 0 ;; esac"
+}
