@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-pack:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            toolExe: ./.smoke-tools/docx-sax
+          - os: windows-latest
+            rid: win-x64
+            toolExe: ./.smoke-tools/docx-sax.exe
+          - os: macos-latest
+            rid: osx-x64
+            toolExe: ./.smoke-tools/docx-sax
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Format check
+        run: dotnet format --verify-no-changes --verbosity minimal --no-restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test with coverage
+        run: dotnet test --configuration Release --no-build --collect:"XPlat Code Coverage" --results-directory TestResults
+
+      - name: CLI smoke JSONL validity
+        shell: pwsh
+        run: |
+          dotnet run --project src/DocxSax.Tool/DocxSax.Tool.csproj --configuration Release --no-build -- parse test/DocxSax.Tests/Fixtures/simple.docx --jsonl > smoke.jsonl
+          $lineCount = 0
+          Get-Content smoke.jsonl | ForEach-Object {
+            if ($_.Trim().Length -eq 0) { return }
+            $lineCount++
+            $_ | ConvertFrom-Json | Out-Null
+          }
+          if ($lineCount -eq 0) { throw "CLI smoke produced no JSONL events" }
+
+      - name: Pack packages
+        run: dotnet pack --configuration Release --no-build --output artifacts/packages
+
+      - name: Package smoke via local tool install
+        shell: pwsh
+        run: |
+          $packageVersion = (dotnet msbuild src/DocxSax.Tool/DocxSax.Tool.csproj -getProperty:PackageVersion -nologo).Trim()
+          if ([string]::IsNullOrWhiteSpace($packageVersion)) {
+            $packageVersion = (dotnet msbuild src/DocxSax.Tool/DocxSax.Tool.csproj -getProperty:Version -nologo).Trim()
+          }
+          if ([string]::IsNullOrWhiteSpace($packageVersion)) { throw "Could not determine package version" }
+
+          $localPackageSource = (Resolve-Path artifacts/packages).Path
+          @(
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<configuration>'
+            '  <packageSources>'
+            '    <clear />'
+            '    <add key="local-packages" value="' + $localPackageSource + '" />'
+            '  </packageSources>'
+            '</configuration>'
+          ) | Set-Content NuGet.local.config
+
+          dotnet tool install DocxSax.Tool --tool-path ./.smoke-tools --configfile NuGet.local.config --version $packageVersion
+          & "${{ matrix.toolExe }}" parse test/DocxSax.Tests/Fixtures/simple.docx --jsonl > package-smoke.jsonl
+          $lineCount = 0
+          Get-Content package-smoke.jsonl | ForEach-Object {
+            if ($_.Trim().Length -eq 0) { return }
+            $lineCount++
+            $_ | ConvertFrom-Json | Out-Null
+          }
+          if ($lineCount -eq 0) { throw "Package smoke produced no JSONL events" }
+
+      - name: Native AOT publish check
+        run: dotnet publish src/DocxSax.Tool/DocxSax.Tool.csproj --configuration Release --runtime ${{ matrix.rid }} --self-contained true -p:PublishAot=true -p:PublishDir=${{ github.workspace }}/artifacts/aot/${{ matrix.rid }}/
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.rid }}
+          path: TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.rid }}
+          path: artifacts/packages/*.nupkg
+
+      - name: Upload native AOT output
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-aot-${{ matrix.rid }}
+          path: artifacts/aot/${{ matrix.rid }}/

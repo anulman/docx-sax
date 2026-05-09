@@ -33,13 +33,34 @@ docs/                 # design notes as the project grows
 4. WASM package.
 5. Next.js demo using the public adapters.
 
-## Build and test
+## Build, test, and validation
 
 ```bash
 dotnet restore
 dotnet build --configuration Release
 dotnet test --configuration Release
+dotnet format --verify-no-changes --verbosity minimal
+dotnet pack --configuration Release --output artifacts/packages
 ```
+
+CI runs these checks on Ubuntu, Windows, and macOS with .NET 8. It also uploads Cobertura coverage artifacts, validates that CLI JSONL output parses line-by-line as JSON, installs the packed `DocxSax.Tool` from the local package output, and performs a Native AOT publish check for the CLI on each runner RID.
+
+NuGet package IDs:
+
+- `DocxSax` for the core library.
+- `DocxSax.Tool` for the `docx-sax` .NET global/local tool command.
+
+## Version strategy
+
+`DocxSax` and `DocxSax.Tool` use one repo-wide SemVer, centralized in `Directory.Build.props`.
+
+Early public packages start at `0.1.0-alpha.1`. The project stays in `0.x` while the typed event contract and JSONL schema are evolving. Use prerelease versions for all early packages, and publish only the top merged artifact from a stacked PR series rather than every intermediate branch.
+
+Version bump guidance:
+
+- Patch/prerelease increments (`0.1.0-alpha.N`) for validation, fixtures, docs, CI, and compatible implementation changes.
+- Minor prerelease increments (`0.2.0-alpha.N`, etc.) for meaningful event-model or schema changes.
+- `1.0.0` only after typed event names/properties are stable, JSONL compatibility is documented, and Node/WASM adapters have proven the core API shape.
 
 ## CLI usage
 
