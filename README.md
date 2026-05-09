@@ -4,6 +4,8 @@
 
 The core is a .NET 8 library built on the Microsoft Open XML SDK. It exposes OpenXML-oriented events such as package, part, relationship, element, text, and diagnostic records. It deliberately preserves low-level details: part URIs, relationship types, XML names/namespaces, attributes, depth, paths, and event ordinals.
 
+For adapter-selection guidance written for humans and LLM/agent consumers, see [LLMS.md](LLMS.md). The Next.js demo also serves the same file at `/LLMS.md` when deployed.
+
 ## Current status
 
 This repository currently contains the core .NET library scaffold, a minimal forward-only reader for simple Word documents, a CLI JSONL adapter over the typed event stream, an initial Linux x64 Node N-API wrapper backed by a .NET Native AOT shared library, and a browser/WASM bridge spike.
