@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>docx-sax</AssemblyName>
+    <RootNamespace>DocxSax.Tool</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>docx-sax</ToolCommandName>
+    <Description>CLI JSONL adapter for DocxSax typed DOCX/OpenXML events.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DocxSax\DocxSax.csproj" />
+  </ItemGroup>
+</Project>

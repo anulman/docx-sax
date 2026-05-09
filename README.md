@@ -6,7 +6,7 @@ The core is a .NET 8 library built on the Microsoft Open XML SDK. It exposes Ope
 
 ## Current status
 
-This repository currently contains the core .NET library scaffold and a minimal forward-only reader for simple Word documents. Later stacked work can build CLI JSONL, Node N-API, WASM, and demo surfaces on top of the typed core API.
+This repository currently contains the core .NET library scaffold, a minimal forward-only reader for simple Word documents, and a CLI JSONL adapter over the typed event stream. Later stacked work can build Node N-API, WASM, and demo surfaces on top of the typed core API.
 
 ## Non-goals
 
@@ -20,14 +20,15 @@ This repository currently contains the core .NET library scaffold and a minimal 
 ```text
 DocxSax.sln
 src/DocxSax/          # .NET 8 typed event reader library
-test/DocxSax.Tests/   # generated DOCX fixtures and API tests
+src/DocxSax.Tool/     # .NET 8 CLI/global-tool JSONL adapter
+test/DocxSax.Tests/   # generated DOCX fixtures, golden JSONL, and tests
 docs/                 # design notes as the project grows
 ```
 
 ## Stack plan
 
-1. Core .NET typed event API (this layer).
-2. CLI JSONL adapter over the typed API.
+1. Core .NET typed event API.
+2. CLI JSONL adapter over the typed API (this layer).
 3. Node N-API bindings.
 4. WASM package.
 5. Next.js demo using the public adapters.
@@ -40,7 +41,31 @@ dotnet build --configuration Release
 dotnet test --configuration Release
 ```
 
-## Minimal usage
+## CLI usage
+
+```bash
+dotnet run --project src/DocxSax.Tool -- parse document.docx --jsonl
+```
+
+The `docx-sax` global tool command shape is:
+
+```bash
+docx-sax parse input.docx --jsonl
+```
+
+JSONL is an adapter format, not the core primitive. Each line is one typed event serialized deterministically to stdout. Human diagnostics and parse failures are written to stderr; invalid or corrupt input exits nonzero.
+
+Event `type` values:
+
+- `package` with `phase: "start" | "end"`
+- `part` with `phase: "start" | "end"`, part URI, content type, and relationship type
+- `relationship` with source URI, relationship id/type, target URI, and external flag
+- `element` for XML element starts, including names, namespace, depth, path, empty-element flag, and attributes
+- `text` for XML text-like nodes, including text, depth, path, and whitespace flag
+- `end` for XML element ends
+- `diagnostic` for non-fatal reader diagnostics
+
+## Minimal library usage
 
 ```csharp
 await using var stream = File.OpenRead("document.docx");
