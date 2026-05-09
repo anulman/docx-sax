@@ -1,9 +1,5 @@
 using System.IO.Packaging;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
 using DocxSax;
 using DocumentFormat.OpenXml.Packaging;
 
@@ -16,17 +12,12 @@ public static unsafe class NativeExports
     public const int ParseFailure = 3;
     public const int CallbackFailure = 4;
 
-    [UnmanagedCallersOnly(EntryPoint = "docx_sax_parse_file_json_batches", CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    public static int ParseFileJsonBatches(byte* inputPathUtf8, int batchSize, delegate* unmanaged[Cdecl]<byte*, int, void*, int> onBatch, void* userData)
+    [UnmanagedCallersOnly(EntryPoint = "docx_sax_parse_file_events", CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    public static int ParseFileEvents(byte* inputPathUtf8, int batchSize, delegate* unmanaged[Cdecl]<NativeDocxEvent*, void*, int> onEvent, void* userData)
     {
-        if (inputPathUtf8 is null || onBatch is null)
+        if (inputPathUtf8 is null || onEvent is null)
         {
             return InvalidArgument;
-        }
-
-        if (batchSize <= 0)
-        {
-            batchSize = 128;
         }
 
         try
@@ -39,160 +30,205 @@ public static unsafe class NativeExports
 
             using var stream = File.OpenRead(inputPath);
             var reader = new DocxSaxReader();
-            var batch = new List<string>(batchSize);
 
             foreach (var docxEvent in reader.Read(stream))
             {
-                batch.Add(ToJson(docxEvent));
-                if (batch.Count >= batchSize && !Flush(batch, onBatch, userData))
+                using var marshaled = MarshaledDocxEvent.From(docxEvent);
+                var payload = marshaled.Payload;
+                if (onEvent(&payload, userData) != 0)
                 {
                     return CallbackFailure;
                 }
             }
 
-            return Flush(batch, onBatch, userData) ? Success : CallbackFailure;
+            return Success;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or FileFormatException or OpenXmlPackageException or JsonException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or FileFormatException or OpenXmlPackageException)
         {
             return ParseFailure;
         }
     }
 
-    private static bool Flush(List<string> batch, delegate* unmanaged[Cdecl]<byte*, int, void*, int> onBatch, void* userData)
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NativeString
     {
-        if (batch.Count == 0)
-        {
-            return true;
-        }
-
-        var json = "[" + string.Join(",", batch) + "]";
-        var bytes = Encoding.UTF8.GetBytes(json);
-        fixed (byte* pointer = bytes)
-        {
-            var result = onBatch(pointer, bytes.Length, userData);
-            batch.Clear();
-            return result == 0;
-        }
+        public byte* Data;
+        public int Length;
     }
 
-    private static string ToJson(DocxEvent docxEvent) => docxEvent switch
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NativeAttribute
     {
-        PackageEvent package => Serialize(
-            new PackagePayload("package", package.IsStart ? "start" : "end", package.Ordinal),
-            NativeJsonContext.Default.PackagePayload),
-        PartEvent part => Serialize(
-            new PartPayload("part", part.IsStart ? "start" : "end", part.Ordinal, part.Uri, part.ContentType, part.RelationshipType),
-            NativeJsonContext.Default.PartPayload),
-        RelationshipEvent relationship => Serialize(
-            new RelationshipPayload("relationship", relationship.Ordinal, relationship.SourceUri, relationship.Id, relationship.RelationshipType, relationship.TargetUri, relationship.IsExternal),
-            NativeJsonContext.Default.RelationshipPayload),
-        ElementStartEvent element => Serialize(
-            new ElementStartPayload(
-                "element",
-                element.Ordinal,
-                element.PartUri,
-                element.Name,
-                element.LocalName,
-                element.Prefix,
-                element.NamespaceUri,
-                element.Depth,
-                element.Path,
-                element.IsEmptyElement,
-                element.Attributes.Select(ToAttributePayload).ToArray()),
-            NativeJsonContext.Default.ElementStartPayload),
-        ElementEndEvent element => Serialize(
-            new ElementEndPayload("end", element.Ordinal, element.PartUri, element.Name, element.LocalName, element.Prefix, element.NamespaceUri, element.Depth, element.Path),
-            NativeJsonContext.Default.ElementEndPayload),
-        TextEvent text => Serialize(
-            new TextPayload("text", text.Ordinal, text.PartUri, text.Text, text.Depth, text.Path, text.IsWhitespace),
-            NativeJsonContext.Default.TextPayload),
-        DiagnosticEvent diagnostic => Serialize(
-            new DiagnosticPayload("diagnostic", diagnostic.Ordinal, diagnostic.Message, diagnostic.PartUri),
-            NativeJsonContext.Default.DiagnosticPayload),
-        _ => throw new InvalidOperationException($"Unsupported event type: {docxEvent.GetType().Name}"),
-    };
+        public NativeString Name;
+        public NativeString LocalName;
+        public NativeString Prefix;
+        public NativeString NamespaceUri;
+        public NativeString Value;
+    }
 
-    private static string Serialize<TPayload>(TPayload payload, JsonTypeInfo<TPayload> jsonTypeInfo) =>
-        JsonSerializer.Serialize(payload, jsonTypeInfo);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NativeDocxEvent
+    {
+        public int Kind;
+        public long Ordinal;
+        public NativeString Phase;
+        public NativeString Uri;
+        public NativeString ContentType;
+        public NativeString RelationshipType;
+        public NativeString SourceUri;
+        public NativeString Id;
+        public NativeString TargetUri;
+        public int IsExternal;
+        public NativeString PartUri;
+        public NativeString Name;
+        public NativeString LocalName;
+        public NativeString Prefix;
+        public NativeString NamespaceUri;
+        public int Depth;
+        public NativeString Path;
+        public int IsEmptyElement;
+        public NativeAttribute* Attributes;
+        public int AttributeCount;
+        public NativeString Text;
+        public int IsWhitespace;
+        public NativeString Message;
+    }
 
-    private static AttributePayload ToAttributePayload(DocxAttribute attribute) =>
-        new(attribute.Name, attribute.LocalName, attribute.Prefix, attribute.NamespaceUri, attribute.Value);
+    private sealed class MarshaledDocxEvent : IDisposable
+    {
+        private readonly List<nint> allocations = [];
+        private nint attributesAllocation;
 
-    internal sealed record PackagePayload(
-        [property: JsonPropertyName("type")] string Type,
-        [property: JsonPropertyName("phase")] string Phase,
-        [property: JsonPropertyName("ordinal")] long Ordinal);
+        private MarshaledDocxEvent()
+        {
+        }
 
-    internal sealed record PartPayload(
-        [property: JsonPropertyName("type")] string Type,
-        [property: JsonPropertyName("phase")] string Phase,
-        [property: JsonPropertyName("ordinal")] long Ordinal,
-        [property: JsonPropertyName("uri")] string Uri,
-        [property: JsonPropertyName("contentType")] string ContentType,
-        [property: JsonPropertyName("relationshipType")] string RelationshipType);
+        public NativeDocxEvent Payload;
 
-    internal sealed record RelationshipPayload(
-        [property: JsonPropertyName("type")] string Type,
-        [property: JsonPropertyName("ordinal")] long Ordinal,
-        [property: JsonPropertyName("sourceUri")] string SourceUri,
-        [property: JsonPropertyName("id")] string Id,
-        [property: JsonPropertyName("relationshipType")] string RelationshipType,
-        [property: JsonPropertyName("targetUri")] string TargetUri,
-        [property: JsonPropertyName("isExternal")] bool IsExternal);
+        public static MarshaledDocxEvent From(DocxEvent docxEvent)
+        {
+            var marshaled = new MarshaledDocxEvent();
+            marshaled.Payload.Ordinal = docxEvent.Ordinal;
 
-    internal sealed record ElementStartPayload(
-        [property: JsonPropertyName("type")] string Type,
-        [property: JsonPropertyName("ordinal")] long Ordinal,
-        [property: JsonPropertyName("partUri")] string PartUri,
-        [property: JsonPropertyName("name")] string Name,
-        [property: JsonPropertyName("localName")] string LocalName,
-        [property: JsonPropertyName("prefix")] string Prefix,
-        [property: JsonPropertyName("namespaceUri")] string NamespaceUri,
-        [property: JsonPropertyName("depth")] int Depth,
-        [property: JsonPropertyName("path")] string Path,
-        [property: JsonPropertyName("isEmptyElement")] bool IsEmptyElement,
-        [property: JsonPropertyName("attributes")] AttributePayload[] Attributes);
+            switch (docxEvent)
+            {
+                case PackageEvent package:
+                    marshaled.Payload.Kind = (int)docxEvent.Kind;
+                    marshaled.Payload.Phase = marshaled.String(package.IsStart ? "start" : "end");
+                    break;
+                case PartEvent part:
+                    marshaled.Payload.Kind = (int)docxEvent.Kind;
+                    marshaled.Payload.Phase = marshaled.String(part.IsStart ? "start" : "end");
+                    marshaled.Payload.Uri = marshaled.String(part.Uri);
+                    marshaled.Payload.ContentType = marshaled.String(part.ContentType);
+                    marshaled.Payload.RelationshipType = marshaled.String(part.RelationshipType);
+                    break;
+                case RelationshipEvent relationship:
+                    marshaled.Payload.Kind = (int)docxEvent.Kind;
+                    marshaled.Payload.SourceUri = marshaled.String(relationship.SourceUri);
+                    marshaled.Payload.Id = marshaled.String(relationship.Id);
+                    marshaled.Payload.RelationshipType = marshaled.String(relationship.RelationshipType);
+                    marshaled.Payload.TargetUri = marshaled.String(relationship.TargetUri);
+                    marshaled.Payload.IsExternal = relationship.IsExternal ? 1 : 0;
+                    break;
+                case ElementStartEvent element:
+                    marshaled.Payload.Kind = (int)docxEvent.Kind;
+                    marshaled.Payload.PartUri = marshaled.String(element.PartUri);
+                    marshaled.Payload.Name = marshaled.String(element.Name);
+                    marshaled.Payload.LocalName = marshaled.String(element.LocalName);
+                    marshaled.Payload.Prefix = marshaled.String(element.Prefix);
+                    marshaled.Payload.NamespaceUri = marshaled.String(element.NamespaceUri);
+                    marshaled.Payload.Depth = element.Depth;
+                    marshaled.Payload.Path = marshaled.String(element.Path);
+                    marshaled.Payload.IsEmptyElement = element.IsEmptyElement ? 1 : 0;
+                    marshaled.SetAttributes(element.Attributes);
+                    break;
+                case ElementEndEvent element:
+                    marshaled.Payload.Kind = (int)docxEvent.Kind;
+                    marshaled.Payload.PartUri = marshaled.String(element.PartUri);
+                    marshaled.Payload.Name = marshaled.String(element.Name);
+                    marshaled.Payload.LocalName = marshaled.String(element.LocalName);
+                    marshaled.Payload.Prefix = marshaled.String(element.Prefix);
+                    marshaled.Payload.NamespaceUri = marshaled.String(element.NamespaceUri);
+                    marshaled.Payload.Depth = element.Depth;
+                    marshaled.Payload.Path = marshaled.String(element.Path);
+                    break;
+                case TextEvent text:
+                    marshaled.Payload.Kind = (int)docxEvent.Kind;
+                    marshaled.Payload.PartUri = marshaled.String(text.PartUri);
+                    marshaled.Payload.Text = marshaled.String(text.Text);
+                    marshaled.Payload.Depth = text.Depth;
+                    marshaled.Payload.Path = marshaled.String(text.Path);
+                    marshaled.Payload.IsWhitespace = text.IsWhitespace ? 1 : 0;
+                    break;
+                case DiagnosticEvent diagnostic:
+                    marshaled.Payload.Kind = (int)docxEvent.Kind;
+                    marshaled.Payload.Message = marshaled.String(diagnostic.Message);
+                    marshaled.Payload.PartUri = marshaled.String(diagnostic.PartUri);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported event type: {docxEvent.GetType().Name}");
+            }
 
-    internal sealed record ElementEndPayload(
-        [property: JsonPropertyName("type")] string Type,
-        [property: JsonPropertyName("ordinal")] long Ordinal,
-        [property: JsonPropertyName("partUri")] string PartUri,
-        [property: JsonPropertyName("name")] string Name,
-        [property: JsonPropertyName("localName")] string LocalName,
-        [property: JsonPropertyName("prefix")] string Prefix,
-        [property: JsonPropertyName("namespaceUri")] string NamespaceUri,
-        [property: JsonPropertyName("depth")] int Depth,
-        [property: JsonPropertyName("path")] string Path);
+            return marshaled;
+        }
 
-    internal sealed record TextPayload(
-        [property: JsonPropertyName("type")] string Type,
-        [property: JsonPropertyName("ordinal")] long Ordinal,
-        [property: JsonPropertyName("partUri")] string PartUri,
-        [property: JsonPropertyName("text")] string Text,
-        [property: JsonPropertyName("depth")] int Depth,
-        [property: JsonPropertyName("path")] string Path,
-        [property: JsonPropertyName("isWhitespace")] bool IsWhitespace);
+        public void Dispose()
+        {
+            foreach (var allocation in allocations)
+            {
+                Marshal.FreeCoTaskMem(allocation);
+            }
 
-    internal sealed record DiagnosticPayload(
-        [property: JsonPropertyName("type")] string Type,
-        [property: JsonPropertyName("ordinal")] long Ordinal,
-        [property: JsonPropertyName("message")] string Message,
-        [property: JsonPropertyName("partUri")] string? PartUri);
+            if (attributesAllocation != 0)
+            {
+                Marshal.FreeCoTaskMem(attributesAllocation);
+            }
+        }
 
-    internal sealed record AttributePayload(
-        [property: JsonPropertyName("name")] string Name,
-        [property: JsonPropertyName("localName")] string LocalName,
-        [property: JsonPropertyName("prefix")] string Prefix,
-        [property: JsonPropertyName("namespaceUri")] string NamespaceUri,
-        [property: JsonPropertyName("value")] string Value);
+        private NativeString String(string? value)
+        {
+            if (value is null)
+            {
+                return default;
+            }
+
+            var bytes = System.Text.Encoding.UTF8.GetByteCount(value);
+            var allocation = Marshal.AllocCoTaskMem(bytes + 1);
+            allocations.Add(allocation);
+
+            var span = new Span<byte>((void*)allocation, bytes + 1);
+            System.Text.Encoding.UTF8.GetBytes(value, span[..bytes]);
+            span[bytes] = 0;
+            return new NativeString { Data = (byte*)allocation, Length = bytes };
+        }
+
+        private void SetAttributes(IReadOnlyList<DocxAttribute> attributes)
+        {
+            if (attributes.Count == 0)
+            {
+                return;
+            }
+
+            var size = sizeof(NativeAttribute) * attributes.Count;
+            attributesAllocation = Marshal.AllocCoTaskMem(size);
+            var nativeAttributes = new Span<NativeAttribute>((void*)attributesAllocation, attributes.Count);
+
+            for (var i = 0; i < attributes.Count; i++)
+            {
+                var attribute = attributes[i];
+                nativeAttributes[i] = new NativeAttribute
+                {
+                    Name = String(attribute.Name),
+                    LocalName = String(attribute.LocalName),
+                    Prefix = String(attribute.Prefix),
+                    NamespaceUri = String(attribute.NamespaceUri),
+                    Value = String(attribute.Value),
+                };
+            }
+
+            Payload.Attributes = (NativeAttribute*)attributesAllocation;
+            Payload.AttributeCount = attributes.Count;
+        }
+    }
 }
-
-[JsonSourceGenerationOptions(WriteIndented = false)]
-[JsonSerializable(typeof(NativeExports.PackagePayload))]
-[JsonSerializable(typeof(NativeExports.PartPayload))]
-[JsonSerializable(typeof(NativeExports.RelationshipPayload))]
-[JsonSerializable(typeof(NativeExports.ElementStartPayload))]
-[JsonSerializable(typeof(NativeExports.ElementEndPayload))]
-[JsonSerializable(typeof(NativeExports.TextPayload))]
-[JsonSerializable(typeof(NativeExports.DiagnosticPayload))]
-internal sealed partial class NativeJsonContext : JsonSerializerContext;

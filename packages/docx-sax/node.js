@@ -37,18 +37,18 @@ export async function* parseFileBatches(path, options = {}) {
   }
 
   const { batchSize, nativeLibraryPath } = normalizeOptions(options);
-  const streamId = nativeAddon.startParseFileBatchesJson(resolve(path), batchSize, nativeLibraryPath);
+  const streamId = nativeAddon.startParseFileBatches(resolve(path), batchSize, nativeLibraryPath);
 
   try {
     while (true) {
-      const next = await nativeAddon.nextBatchJson(streamId);
+      const next = await nativeAddon.nextBatch(streamId);
       if (next.done) {
         // The native worker marks the stream done before its async completion callback
         // necessarily runs on the JS thread. Give that callback a turn before dispose.
         await new Promise((resolve) => setImmediate(resolve));
         break;
       }
-      yield JSON.parse(next.value);
+      yield next.value;
     }
   } finally {
     nativeAddon.disposeParse(streamId);
