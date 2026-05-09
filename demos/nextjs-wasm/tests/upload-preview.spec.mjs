@@ -111,6 +111,7 @@ test('renders representative text in the right-hand preview for DOCX chart parts
   expect(articleBox.x, 'visible preview content should render inside the right-hand preview card').toBeGreaterThanOrEqual(previewBox.x);
   expect(articleBox.width, 'visible preview content should occupy horizontal space').toBeGreaterThan(100);
   expect(articleBox.height, 'visible preview content should occupy vertical space').toBeGreaterThan(20);
+  await expect(previewCard).not.toHaveCSS('overflow', 'auto');
 
   expect(errors).toEqual([]);
 });

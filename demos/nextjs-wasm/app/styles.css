@@ -25,7 +25,6 @@ h2 { margin-top: 0; }
 .status { font-weight: 700; }
 .hint, .muted { color: var(--muted); }
 .error { white-space: pre-wrap; color: #9b1c1c; background: #fff1f2; border-radius: 12px; padding: 12px; overflow: auto; }
-.preview { max-height: 72vh; overflow: auto; }
 .preview article { line-height: 1.7; font-size: 1.05rem; }
 .doc-section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; }
 .doc-section:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
