@@ -6,9 +6,10 @@ import { parseBytesBatches, preloadRuntime, warmupRuntime } from 'docx-sax/brows
 const DOTNET_MODULE_URL = '/docx-sax/_framework/dotnet.js';
 const INITIAL_STATUS = 'Choose a .docx file to parse it in your browser.';
 const PREVIEW_UPDATE_INTERVAL_MS = 100;
-const MAX_PREVIEW_PARAGRAPHS = 80;
-const MAX_FALLBACK_SNIPPETS = 40;
 const MAX_DIAGNOSTICS = 20;
+const TRACKED_CHANGE_ELEMENTS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
+const STYLE_REFERENCE_ELEMENTS = new Set(['pStyle', 'rStyle', 'tblStyle', 'numStyleLink', 'styleLink']);
+const REFERENCE_ELEMENTS = new Set(['commentRangeStart', 'commentRangeEnd', 'commentReference', 'footnoteReference', 'endnoteReference']);
 
 function emptySummary() {
   return { events: 0, textEvents: 0, parts: new Set(), diagnostics: [] };
@@ -23,57 +24,169 @@ function cloneSummary(summary) {
   };
 }
 
+function emptyPreviewDocument() {
+  return {
+    partSections: [],
+    comments: [],
+    notes: [],
+    trackedChanges: [],
+    styleObjects: [],
+    references: [],
+  };
+}
+
 function createPreviewState() {
   return {
-    paragraphs: [],
-    fallbackSnippets: [],
-    fallbackSeen: new Set(),
-    currentParagraph: '',
+    parts: new Map(),
+    comments: new Map(),
+    notes: new Map(),
+    trackedChanges: [],
+    styleObjects: [],
+    references: [],
+    trackedStack: [],
   };
+}
+
+function attrValue(event, localName) {
+  return event.attributes?.find((attr) => attr.localName === localName)?.value;
+}
+
+function attrsObject(event) {
+  return Object.fromEntries((event.attributes ?? []).map((attr) => [attr.name, attr.value]));
+}
+
+function attrsLabel(attrs) {
+  const entries = Object.entries(attrs ?? {});
+  if (entries.length === 0) return '';
+  return entries.map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(' ');
+}
+
+function sectionForPart(preview, partUri) {
+  const key = partUri || '(package)';
+  let section = preview.parts.get(key);
+  if (!section) {
+    section = { partUri: key, paragraphs: [], fallbackText: [], currentParagraph: '' };
+    preview.parts.set(key, section);
+  }
+  return section;
+}
+
+function appendParagraph(section) {
+  const text = section.currentParagraph.trim();
+  if (text.length > 0) section.paragraphs.push(text);
+  section.currentParagraph = '';
+}
+
+function appendText(preview, event) {
+  if (event.isWhitespace || !event.text) return;
+  const section = sectionForPart(preview, event.partUri);
+  section.currentParagraph += event.text;
+
+  const trimmed = event.text.trim();
+  if (trimmed) section.fallbackText.push(trimmed);
+  for (const change of preview.trackedStack) change.text += event.text;
 }
 
 function appendPreviewBatch(preview, batch) {
   for (const event of batch) {
-    if (event.type === 'text' && !event.isWhitespace && event.text) {
-      preview.currentParagraph += event.text;
-      const snippet = event.text.trim();
-      if (snippet && preview.fallbackSnippets.length < MAX_FALLBACK_SNIPPETS && !preview.fallbackSeen.has(snippet)) {
-        preview.fallbackSeen.add(snippet);
-        preview.fallbackSnippets.push(snippet);
+    if (event.type === 'element') {
+      if (TRACKED_CHANGE_ELEMENTS.has(event.localName)) {
+        const change = {
+          type: event.localName,
+          partUri: event.partUri,
+          attrs: attrsObject(event),
+          text: '',
+        };
+        preview.trackedChanges.push(change);
+        preview.trackedStack.push(change);
+      }
+
+      if (REFERENCE_ELEMENTS.has(event.localName)) {
+        preview.references.push({
+          type: event.localName,
+          partUri: event.partUri,
+          id: attrValue(event, 'id'),
+          attrs: attrsObject(event),
+        });
+      }
+
+      if (event.partUri === '/word/styles.xml' || STYLE_REFERENCE_ELEMENTS.has(event.localName)) {
+        preview.styleObjects.push({
+          type: event.localName,
+          partUri: event.partUri,
+          path: event.path,
+          attrs: attrsObject(event),
+        });
       }
     }
 
-    if (event.type === 'end' && event.localName === 'p') {
-      const text = preview.currentParagraph.trim();
-      if (text.length > 0 && preview.paragraphs.length < MAX_PREVIEW_PARAGRAPHS) {
-        preview.paragraphs.push(text);
+    if (event.type === 'text') {
+      appendText(preview, event);
+    }
+
+    if (event.type === 'end') {
+      if (event.localName === 'p') {
+        appendParagraph(sectionForPart(preview, event.partUri));
       }
-      preview.currentParagraph = '';
+
+      if (TRACKED_CHANGE_ELEMENTS.has(event.localName)) {
+        const index = preview.trackedStack.findLastIndex((change) => change.type === event.localName);
+        if (index !== -1) preview.trackedStack.splice(index, 1);
+      }
     }
   }
 }
 
-function previewParagraphs(preview, includeTrailing = false) {
-  const paragraphs = [...preview.paragraphs];
-  const trailing = preview.currentParagraph.trim();
-  if (includeTrailing && trailing.length > 0 && paragraphs.length > 0 && paragraphs.length < MAX_PREVIEW_PARAGRAPHS) {
-    paragraphs.push(trailing);
-  }
+function clonePreviewDocument(preview, includeTrailing = false) {
+  const partSections = [...preview.parts.values()].map((section) => {
+    const paragraphs = [...section.paragraphs];
+    const trailing = section.currentParagraph.trim();
+    if (includeTrailing && trailing) paragraphs.push(trailing);
 
-  if (paragraphs.length > 0) {
-    return paragraphs;
-  }
+    return {
+      partUri: section.partUri,
+      paragraphs: paragraphs.length > 0 ? paragraphs : [...section.fallbackText],
+    };
+  }).filter((section) => section.paragraphs.length > 0);
 
-  // Some valid DOCX packages carry useful text outside Word paragraphs, for example chart
-  // caches under c:v/c:f. Surface those text events instead of leaving Preview blank.
-  return preview.fallbackSnippets;
+  return {
+    partSections,
+    comments: partSections.filter((section) => /comments/i.test(section.partUri)),
+    notes: partSections.filter((section) => /(footnotes|endnotes)/i.test(section.partUri)),
+    trackedChanges: preview.trackedChanges
+      .filter((change) => change.text.trim())
+      .map((change) => ({ ...change, text: change.text.trim() })),
+    styleObjects: preview.styleObjects.map((style) => ({ ...style, attrs: { ...style.attrs } })),
+    references: preview.references.map((ref) => ({ ...ref, attrs: { ...ref.attrs } })),
+  };
+}
+
+function PartText({ section }) {
+  return (
+    <section className="doc-section">
+      <h3>{section.partUri}</h3>
+      {section.paragraphs.map((paragraph, index) => <p key={`${section.partUri}-${index}`}>{paragraph}</p>)}
+    </section>
+  );
+}
+
+function MetadataList({ title, items, renderItem }) {
+  if (items.length === 0) return null;
+  return (
+    <section className="doc-section metadata-section">
+      <h3>{title}</h3>
+      <ul>
+        {items.map((item, index) => <li key={index}>{renderItem(item)}</li>)}
+      </ul>
+    </section>
+  );
 }
 
 export default function Home() {
   const [fileName, setFileName] = useState('');
   const [status, setStatus] = useState(INITIAL_STATUS);
   const [busy, setBusy] = useState(false);
-  const [paragraphs, setParagraphs] = useState([]);
+  const [previewDocument, setPreviewDocument] = useState(emptyPreviewDocument());
   const [summary, setSummary] = useState(emptySummary());
   const [error, setError] = useState('');
 
@@ -122,7 +235,7 @@ export default function Home() {
     setBusy(true);
     setFileName(file.name);
     setError('');
-    setParagraphs([]);
+    setPreviewDocument(emptyPreviewDocument());
     setSummary(emptySummary());
     setStatus('Loading WASM runtime and parsing DOCX…');
 
@@ -148,13 +261,13 @@ export default function Home() {
         const now = performance.now();
         if (now - lastPreviewUpdate >= PREVIEW_UPDATE_INTERVAL_MS) {
           lastPreviewUpdate = now;
-          setParagraphs(previewParagraphs(preview));
+          setPreviewDocument(clonePreviewDocument(preview));
           setSummary(cloneSummary(nextSummary));
           setStatus(`Parsed ${nextSummary.events} events from ${file.name}…`);
         }
       }
 
-      setParagraphs(previewParagraphs(preview, true));
+      setPreviewDocument(clonePreviewDocument(preview, true));
       setSummary(cloneSummary(nextSummary));
       setStatus(`Parsed ${nextSummary.events} events from ${file.name}.`);
     } catch (err) {
@@ -171,6 +284,11 @@ export default function Home() {
     if (!file) return;
     await parseFile(file);
   }
+
+  const hasPreview = previewDocument.partSections.length > 0
+    || previewDocument.trackedChanges.length > 0
+    || previewDocument.styleObjects.length > 0
+    || previewDocument.references.length > 0;
 
   return (
     <main className="shell">
@@ -201,11 +319,16 @@ export default function Home() {
 
         <div className="card preview">
           <h2>Preview</h2>
-          {paragraphs.length === 0 ? (
+          {!hasPreview ? (
             <p className="muted">Parsed document text will appear here.</p>
           ) : (
             <article aria-label="Rendered DOCX preview">
-              {paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+              {previewDocument.partSections.map((section) => <PartText key={section.partUri} section={section} />)}
+              <MetadataList title="Comments" items={previewDocument.comments} renderItem={(section) => <span>{section.partUri}: {section.paragraphs.join(' ')}</span>} />
+              <MetadataList title="Footnotes / endnotes" items={previewDocument.notes} renderItem={(section) => <span>{section.partUri}: {section.paragraphs.join(' ')}</span>} />
+              <MetadataList title="Tracked changes" items={previewDocument.trackedChanges} renderItem={(change) => <span><strong>{change.type}</strong> {attrsLabel(change.attrs)} — {change.text}</span>} />
+              <MetadataList title="Comment / note references" items={previewDocument.references} renderItem={(ref) => <span><strong>{ref.type}</strong> {ref.partUri} id={ref.id ?? '(none)'}</span>} />
+              <MetadataList title="Style objects" items={previewDocument.styleObjects} renderItem={(style) => <span><strong>{style.type}</strong> {style.partUri} {style.path} {attrsLabel(style.attrs)}</span>} />
             </article>
           )}
         </div>
@@ -217,6 +340,8 @@ export default function Home() {
           <div><dt>Events</dt><dd>{summary.events}</dd></div>
           <div><dt>Text events</dt><dd>{summary.textEvents}</dd></div>
           <div><dt>Parts</dt><dd>{partList.length}</dd></div>
+          <div><dt>Tracked changes</dt><dd>{previewDocument.trackedChanges.length}</dd></div>
+          <div><dt>Style objects</dt><dd>{previewDocument.styleObjects.length}</dd></div>
         </dl>
         {partList.length > 0 && <ul>{partList.map((part) => <li key={part}>{part}</li>)}</ul>}
         {summary.diagnostics.length > 0 && <pre className="error">{summary.diagnostics.join('\n')}</pre>}

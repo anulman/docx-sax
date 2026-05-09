@@ -28,7 +28,7 @@ test('uploads public fixture, loads WASM, parses events, and renders preview', a
 
   await expect(page.getByRole('status')).toContainText(/Parsed \d+ events from simple\.docx/, { timeout: 45_000 });
   await expect(page.getByLabel('Rendered DOCX preview')).toContainText('Hello DOCX SAX');
-  await expect(page.getByText('/word/document.xml')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '/word/document.xml' })).toBeVisible();
   await expect(page.getByText('Text events')).toBeVisible();
 
   expect(errors).toEqual([]);
@@ -56,7 +56,8 @@ test('reports partial parse progress before final completion for a large generat
 
   await expect(page.getByRole('status')).toContainText(/Parsed \d+ events from large-generated\.docx\./, { timeout: 60_000 });
   await expect(page.getByLabel('Rendered DOCX preview')).toContainText('Generated DOCX SAX paragraph 0');
-  await expect(page.getByText('/word/document.xml')).toBeVisible();
+  await expect(page.getByLabel('Rendered DOCX preview')).toContainText('Generated DOCX SAX paragraph 5999');
+  await expect(page.getByRole('heading', { name: '/word/document.xml' })).toBeVisible();
 
   const statuses = await page.evaluate(() => window.__docxSaxStatuses ?? []);
   const partialStatuses = statuses.filter((status) => /Parsed \d+ events from large-generated\.docx…/.test(status));
@@ -92,9 +93,9 @@ test('renders representative text in the right-hand preview for DOCX chart parts
   await expect(preview).toContainText('4.3');
   await expect(preview).not.toContainText('Parsed document text will appear here.');
 
-  await expect(page.getByText('/word/charts/chart1.xml')).toBeVisible();
-  await expect(page.getByText('/word/charts/chart2.xml')).toBeVisible();
-  await expect(page.getByText('/word/charts/chart3.xml')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '/word/charts/chart1.xml' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '/word/charts/chart2.xml' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '/word/charts/chart3.xml' })).toBeVisible();
   await expect(page.locator('dl').filter({ hasText: 'Text events' })).toContainText('117');
 
   const [uploadBox, previewBox, articleBox] = await Promise.all([
