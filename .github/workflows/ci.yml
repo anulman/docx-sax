@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - 'clawy/**'
   pull_request:
 
 permissions:
