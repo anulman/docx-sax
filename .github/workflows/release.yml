@@ -172,7 +172,8 @@ jobs:
         uses: NuGet/login@v1
         id: nuget-login
         with:
-          user: ${{ secrets.NUGET_USER }}
+          # NuGet trusted publishing requires the nuget.org username (profile name), not an API key or email.
+          user: anulman
 
       - name: Publish NuGet packages
         shell: bash
