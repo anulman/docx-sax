@@ -105,21 +105,19 @@ jobs:
       - name: Native AOT publish check
         run: dotnet publish src/DocxSax.Tool/DocxSax.Tool.csproj --configuration Release --runtime ${{ matrix.rid }} --self-contained true -p:PublishAot=true -p:PublishDir=${{ github.workspace }}/artifacts/aot/${{ matrix.rid }}/
 
-      - name: Node N-API wrapper smoke
+      - name: Node adapter smoke
         if: matrix.rid == 'linux-x64'
-        working-directory: packages/docx-sax
         run: |
           npm ci
-          npm run build:node
-          npm run test:node
+          npm run build --workspace @docx-sax/native-linux-x64
+          npm run test --workspace @docx-sax/native-linux-x64
 
-      - name: Browser WASM bridge smoke
+      - name: Browser WASM adapter smoke
         if: matrix.rid == 'linux-x64'
-        working-directory: packages/docx-sax
         run: |
           npm ci
           npx playwright install --with-deps chromium
-          npm run test:browser
+          npm run test --workspace @docx-sax/browser
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4

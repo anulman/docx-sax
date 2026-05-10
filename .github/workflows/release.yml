@@ -16,7 +16,7 @@ on:
         type: boolean
         default: true
       publish-npm:
-        description: 'Publish the docx-sax npm package when dry-run is false'
+        description: 'Publish the docx-sax npm packages when dry-run is false'
         type: boolean
         default: true
       npm-tag:
@@ -190,10 +190,44 @@ jobs:
             dotnet nuget push "$package" --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
           done
 
-  npm:
-    name: npm packages
+  npm-build-pack:
+    name: npm package (${{ matrix.artifact }})
     needs: meta
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: '@docx-sax/node'
+            artifact: npm-node
+            setup-wasm: false
+            setup-playwright: false
+            runtime: node-adapter
+          - package: '@docx-sax/native-linux-x64'
+            artifact: npm-native-linux-x64
+            setup-wasm: false
+            setup-playwright: false
+            runtime: linux-x64
+          - package: '@docx-sax/native-darwin-arm64'
+            artifact: npm-native-darwin-arm64
+            setup-wasm: false
+            setup-playwright: false
+            runtime: darwin-arm64-placeholder
+          - package: '@docx-sax/native-darwin-x64'
+            artifact: npm-native-darwin-x64
+            setup-wasm: false
+            setup-playwright: false
+            runtime: darwin-x64-placeholder
+          - package: '@docx-sax/native-win32-x64'
+            artifact: npm-native-win32-x64
+            setup-wasm: false
+            setup-playwright: false
+            runtime: win32-x64-placeholder
+          - package: '@docx-sax/browser'
+            artifact: npm-browser
+            setup-wasm: true
+            setup-playwright: true
+            runtime: browser-wasm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -209,69 +243,117 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - name: Apply npm package version
+      - name: Apply workspace package versions
         env:
           RELEASE_VERSION: ${{ needs.meta.outputs.version }}
         run: |
           node - <<'NODE'
           const fs = require('node:fs');
           const version = process.env.RELEASE_VERSION;
+          const packageJsonPaths = [
+            'package.json',
+            'packages/node/package.json',
+            'packages/native-linux-x64/package.json',
+            'packages/native-darwin-arm64/package.json',
+            'packages/native-darwin-x64/package.json',
+            'packages/native-win32-x64/package.json',
+            'packages/browser-wasm/package.json',
+            'demos/nextjs-wasm/package.json',
+          ];
+          const packageNames = new Set();
 
           function writeJson(path, json) {
             fs.writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
           }
 
-          const packageJsonPath = 'packages/docx-sax/package.json';
-          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-          packageJson.version = version;
-          writeJson(packageJsonPath, packageJson);
+          for (const path of packageJsonPaths) {
+            const json = JSON.parse(fs.readFileSync(path, 'utf8'));
+            if (json.name) packageNames.add(json.name);
+            json.version = version;
+            for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+              for (const name of ['@docx-sax/node', '@docx-sax/browser', '@docx-sax/native-linux-x64', '@docx-sax/native-darwin-arm64', '@docx-sax/native-darwin-x64', '@docx-sax/native-win32-x64']) {
+                if (json[key]?.[name] && !json[key][name].startsWith('file:')) {
+                  json[key][name] = version;
+                }
+              }
+            }
+            writeJson(path, json);
+          }
 
-          const lockPath = 'packages/docx-sax/package-lock.json';
+          const lockPath = 'package-lock.json';
           const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
           lock.version = version;
-          if (lock.packages?.['']) lock.packages[''].version = version;
+          if (lock.packages) {
+            for (const [path, entry] of Object.entries(lock.packages)) {
+              if (path === '' || (entry.name && packageNames.has(entry.name))) {
+                entry.version = version;
+              }
+              for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+                for (const name of ['@docx-sax/node', '@docx-sax/browser', '@docx-sax/native-linux-x64', '@docx-sax/native-darwin-arm64', '@docx-sax/native-darwin-x64', '@docx-sax/native-win32-x64']) {
+                  if (entry[key]?.[name] && !entry[key][name].startsWith('file:')) {
+                    entry[key][name] = version;
+                  }
+                }
+              }
+            }
+          }
+          if (lock.dependencies) {
+            for (const name of ['@docx-sax/node', '@docx-sax/browser', '@docx-sax/native-linux-x64', '@docx-sax/native-darwin-arm64', '@docx-sax/native-darwin-x64', '@docx-sax/native-win32-x64']) {
+              if (lock.dependencies[name]) lock.dependencies[name].version = version;
+            }
+          }
           writeJson(lockPath, lock);
-
-          console.log(`packages/docx-sax version set to ${version}`);
+          console.log(`workspace package versions set to ${version}`);
           NODE
 
+      - name: Install workspace dependencies
+        run: npm ci
+
       - name: Setup .NET WASM workloads
+        if: matrix.setup-wasm
         run: dotnet workload install wasm-tools wasm-experimental
 
-      - name: Validate npm package version
-        run: test "$(node -p "require('./packages/docx-sax/package.json').version")" = "${{ needs.meta.outputs.version }}"
+      - name: Build package
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: npm run build --workspace "$PACKAGE"
 
-      - name: Build and test npm package
-        working-directory: packages/docx-sax
-        run: |
-          npm ci
-          npm run build
-          npm run test:node
-          npx playwright install --with-deps chromium
-          npm run test:browser
+      - name: Install browser smoke dependencies
+        if: matrix.setup-playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Test package
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: npm run test --workspace "$PACKAGE"
 
       - name: Pack npm package artifact
-        working-directory: packages/docx-sax
+        env:
+          PACKAGE: ${{ matrix.package }}
         run: |
           set -euo pipefail
-          mkdir -p ../../artifacts/npm
-          npm pack --pack-destination ../../artifacts/npm
+          mkdir -p artifacts/npm
+          npm pack --workspace "$PACKAGE" --pack-destination artifacts/npm
+          ls -lh artifacts/npm
 
       - name: npm publish dry run
         if: needs.meta.outputs.dry-run == 'true'
-        working-directory: packages/docx-sax
-        run: npm publish --dry-run --access public --tag "${{ needs.meta.outputs.npm-tag }}"
+        run: |
+          set -euo pipefail
+          package=$(find artifacts/npm -maxdepth 1 -type f -name '*.tgz' | head -n 1)
+          test -n "$package"
+          npm publish "$package" --dry-run --access public --tag "${{ needs.meta.outputs.npm-tag }}"
 
-      - name: Upload npm artifacts
+      - name: Upload npm artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-npm-packages
-          path: artifacts/npm/*
-          if-no-files-found: ignore
+          name: ${{ matrix.artifact }}
+          path: artifacts/npm/*.tgz
+          if-no-files-found: error
 
   npm-publish:
-    name: Publish npm package
-    needs: [meta, npm]
+    name: Publish npm packages
+    needs: [meta, npm-build-pack]
     if: needs.meta.outputs.dry-run == 'false' && needs.meta.outputs.publish-npm == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -284,19 +366,27 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - name: Download npm artifact
+      - name: Download npm artifacts
         uses: actions/download-artifact@v4
         with:
-          name: release-npm-packages
+          pattern: npm-*
           path: artifacts/npm
+          merge-multiple: true
 
-      - name: Publish npm package with trusted publishing
+      - name: Publish npm packages with trusted publishing
         shell: bash
         run: |
           set -euo pipefail
-          package=$(find artifacts/npm -maxdepth 1 -type f -name 'docx-sax-*.tgz' | head -n 1)
-          test -n "$package"
-          npm publish "$package" --provenance --access public --tag "${{ needs.meta.outputs.npm-tag }}"
+          shopt -s nullglob
+          packages=(
+            artifacts/npm/docx-sax-native-*.tgz
+            artifacts/npm/docx-sax-browser-*.tgz
+            artifacts/npm/docx-sax-node-[0-9]*.tgz
+          )
+          test "${#packages[@]}" -eq 6
+          for package in "${packages[@]}"; do
+            npm publish "$package" --provenance --access public --tag "${{ needs.meta.outputs.npm-tag }}"
+          done
 
   demo-build:
     name: Demo build
@@ -316,40 +406,49 @@ jobs:
         with:
           node-version: 20
 
-      - name: Apply demo package version
+      - name: Apply demo package versions
         env:
           RELEASE_VERSION: ${{ needs.meta.outputs.version }}
         run: |
           node - <<'NODE'
           const fs = require('node:fs');
           const version = process.env.RELEASE_VERSION;
-
+          const packageJsonPaths = [
+            'package.json',
+            'packages/node/package.json',
+            'packages/native-linux-x64/package.json',
+            'packages/native-darwin-arm64/package.json',
+            'packages/native-darwin-x64/package.json',
+            'packages/native-win32-x64/package.json',
+            'packages/browser-wasm/package.json',
+            'demos/nextjs-wasm/package.json',
+          ];
           function writeJson(path, json) {
             fs.writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
           }
-
-          const packageJsonPath = 'packages/docx-sax/package.json';
-          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-          packageJson.version = version;
-          writeJson(packageJsonPath, packageJson);
-
-          for (const lockPath of ['packages/docx-sax/package-lock.json', 'demos/nextjs-wasm/package-lock.json']) {
-            const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
-            lock.version = version;
-            if (lock.packages?.['']) lock.packages[''].version = version;
-            if (lock.packages?.['node_modules/docx-sax']) lock.packages['node_modules/docx-sax'].version = version;
-            if (lock.dependencies?.['docx-sax']) lock.dependencies['docx-sax'].version = version;
-            writeJson(lockPath, lock);
+          for (const path of packageJsonPaths) {
+            const json = JSON.parse(fs.readFileSync(path, 'utf8'));
+            json.version = version;
+            writeJson(path, json);
           }
-
-          console.log(`demo docx-sax package version set to ${version}`);
+          const lockPath = 'package-lock.json';
+          const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+          lock.version = version;
+          if (lock.packages) {
+            for (const entry of Object.values(lock.packages)) {
+              if (entry.name && ['@docx-sax/node', '@docx-sax/browser', '@docx-sax/native-linux-x64', '@docx-sax/native-darwin-arm64', '@docx-sax/native-darwin-x64', '@docx-sax/native-win32-x64', '@docx-sax/demo-nextjs-wasm', 'docx-sax-repo'].includes(entry.name)) {
+                entry.version = version;
+              }
+            }
+          }
+          writeJson(lockPath, lock);
+          console.log(`demo workspace package versions set to ${version}`);
           NODE
 
       - name: Setup .NET WASM workloads
         run: dotnet workload install wasm-tools wasm-experimental
 
       - name: Build demo
-        working-directory: demos/nextjs-wasm
         run: |
           npm ci
-          npm run build
+          npm run build --workspace @docx-sax/demo-nextjs-wasm

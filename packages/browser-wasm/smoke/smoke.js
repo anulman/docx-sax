@@ -1,4 +1,4 @@
-import { parseBytes, parseBytesBatches, preloadRuntime, warmupRuntime } from '../browser.js';
+import { parseBytes, parseBytesBatches, preloadRuntime, warmupRuntime } from '../index.js';
 import { assertCommonDocxSaxEventModel, collectEventShapeSummary } from '../../../test/js/common-event-shape.mjs';
 import { createGeneratedDocxBytes } from '../../../test/js/generated-docx.mjs';
 

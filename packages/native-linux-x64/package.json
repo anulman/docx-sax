@@ -1,0 +1,37 @@
+{
+  "name": "@docx-sax/native-linux-x64",
+  "version": "0.1.0-alpha.1",
+  "description": "Linux x64 native payload package for @docx-sax/node. v0 bundles the .NET Native AOT shared library and N-API addon.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "build/Release/docx_sax_node.node",
+    "native/linux-x64/DocxSax.Native.so"
+  ],
+  "scripts": {
+    "build:dotnet": "dotnet publish ../../src/DocxSax.Native/DocxSax.Native.csproj --configuration Release --runtime linux-x64 --self-contained true -p:PublishAot=true -p:PublishDir=$PWD/native/linux-x64/",
+    "build:addon": "node-gyp rebuild",
+    "build": "npm run build:dotnet && npm run build:addon",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "node-gyp": "^11.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}
