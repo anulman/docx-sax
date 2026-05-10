@@ -19,10 +19,6 @@ on:
         description: 'Publish the docx-sax npm packages when dry-run is false'
         type: boolean
         default: true
-      npm-tag:
-        description: 'npm dist-tag for manual publish; defaults to alpha for prereleases'
-        type: string
-        required: false
 
 permissions:
   contents: read
@@ -62,12 +58,6 @@ jobs:
             dry_run="${{ inputs['dry-run'] }}"
             publish_nuget="${{ inputs['publish-nuget'] }}"
             publish_npm="${{ inputs['publish-npm'] }}"
-            npm_tag_input="${{ inputs['npm-tag'] || '' }}"
-            npm_tag="$npm_tag_input"
-            if [[ -n "$npm_tag_input" && "$npm_tag_input" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+-([A-Za-z0-9][A-Za-z0-9_-]*)(\.[0-9A-Za-z._-]+)?$ ]]; then
-              npm_tag="${BASH_REMATCH[1]}"
-              echo "Normalized version-like npm tag input '$npm_tag_input' to dist-tag '$npm_tag'"
-            fi
           else
             # Branch pushes are CI proof only: always dry-run and never publish externally.
             version="$repo_version"
@@ -82,12 +72,14 @@ jobs:
             exit 1
           fi
 
-          if [[ -z "$npm_tag" ]]; then
-            npm_tag="latest"
-            if [[ "$version" == *-* ]]; then
-              prerelease_part="${version#*-}"
-              npm_tag="${prerelease_part%%.*}"
-            fi
+          # Infer the npm dist-tag from the version suffix:
+          #   1.2.3           -> latest
+          #   1.2.3-alpha.1   -> alpha
+          #   1.2.3-foo       -> foo
+          npm_tag="latest"
+          if [[ "$version" == *-* ]]; then
+            prerelease_part="${version#*-}"
+            npm_tag="${prerelease_part%%.*}"
           fi
 
           if [[ "$npm_tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+($|-.*) ]]; then
