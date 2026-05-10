@@ -18,5 +18,13 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anulman/docx-sax"
+  },
+  "bugs": {
+    "url": "https://github.com/anulman/docx-sax/issues"
+  },
+  "homepage": "https://github.com/anulman/docx-sax#readme"
 }

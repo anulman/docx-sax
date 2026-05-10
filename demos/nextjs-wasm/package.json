@@ -28,5 +28,14 @@
   },
   "overrides": {
     "postcss": "^8.4.38"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anulman/docx-sax",
+    "directory": "demos/nextjs-wasm"
+  },
+  "bugs": {
+    "url": "https://github.com/anulman/docx-sax/issues"
+  },
+  "homepage": "https://github.com/anulman/docx-sax/tree/main/demos/nextjs-wasm#readme"
 }

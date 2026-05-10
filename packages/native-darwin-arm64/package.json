@@ -21,5 +21,14 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anulman/docx-sax",
+    "directory": "packages/native-darwin-arm64"
+  },
+  "bugs": {
+    "url": "https://github.com/anulman/docx-sax/issues"
+  },
+  "homepage": "https://github.com/anulman/docx-sax/tree/main/packages/native-darwin-arm64#readme"
 }

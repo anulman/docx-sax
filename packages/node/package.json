@@ -23,5 +23,14 @@
   },
   "optionalDependencies": {
     "@docx-sax/native-linux-x64": "0.1.0-alpha.1"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anulman/docx-sax",
+    "directory": "packages/node"
+  },
+  "bugs": {
+    "url": "https://github.com/anulman/docx-sax/issues"
+  },
+  "homepage": "https://github.com/anulman/docx-sax/tree/main/packages/node#readme"
 }

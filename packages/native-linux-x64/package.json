@@ -33,5 +33,14 @@
   ],
   "cpu": [
     "x64"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anulman/docx-sax",
+    "directory": "packages/native-linux-x64"
+  },
+  "bugs": {
+    "url": "https://github.com/anulman/docx-sax/issues"
+  },
+  "homepage": "https://github.com/anulman/docx-sax/tree/main/packages/native-linux-x64#readme"
 }
