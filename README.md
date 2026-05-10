@@ -4,9 +4,22 @@
 
 The core is a .NET 8 library built on the Microsoft Open XML SDK. It exposes OpenXML-oriented events such as package, part, relationship, element, text, and diagnostic records. It deliberately preserves low-level details: part URIs, relationship types, XML names/namespaces, attributes, depth, paths, and event ordinals.
 
+For adapter-selection guidance written for humans and LLM/agent consumers, see [LLMS.md](LLMS.md). The Next.js demo also serves the same file at `/LLMS.md` when deployed.
+
 ## Current status
 
-This repository currently contains the core .NET library scaffold, a minimal forward-only reader for simple Word documents, a CLI JSONL adapter over the typed event stream, an initial Linux x64 Node N-API wrapper backed by a .NET Native AOT shared library, and a browser/WASM bridge spike.
+This repository currently contains the core .NET library scaffold, a minimal forward-only reader for simple Word documents, a CLI JSONL adapter over the typed event stream, an initial Linux x64 Node N-API wrapper backed by a .NET Native AOT shared library, and a browser/WASM bridge spike, and namespaced npm runtime plugin packages.
+
+## JavaScript API model
+
+The public JavaScript wrappers share one event model and differ only by input transport:
+
+- `@docx-sax/node` accepts file paths with `parseFile(path, options)` and `parseFileBatches(path, options)` and loads the `@docx-sax/native-linux-x64` payload on Linux x64.
+- `@docx-sax/browser` accepts bytes/blob inputs with `parseBytes(input, options)` and `parseBytesBatches(input, options)` and owns the browser/WASM adapter.
+
+All four functions return async iterables over the same `DocxSaxEvent` object union. The non-batched helpers yield one event at a time; the batched helpers yield `DocxSaxEvent[]` chunks and accept the shared `{ batchSize }` option. Transport-specific options stay transport-specific (`nativeLibraryPath` for Node, `dotnetModuleUrl` for browser/WASM).
+
+The package ships TypeScript declarations for the common event union: package/part lifecycle events, relationships, XML element starts/ends, text events, diagnostics, attributes, ordinals, paths, namespaces, and part URIs. The wrappers intentionally do not expose a whole-document array API; consumers should iterate the stream or batches.
 
 ## Non-goals
 
@@ -23,7 +36,13 @@ src/DocxSax/          # .NET 8 typed event reader library
 src/DocxSax.Tool/     # .NET 8 CLI/global-tool JSONL adapter
 src/DocxSax.Native/   # .NET 8 Native AOT C ABI bridge for Node/native hosts
 src/DocxSax.Browser/  # .NET 8 browser-wasm JSExport bridge spike
-packages/docx-sax/    # Single npm package with /node and /browser exports
+packages/node/                  # @docx-sax/node user-facing Node adapter
+packages/native-linux-x64/              # @docx-sax/native-linux-x64 Linux x64 native runtime payload
+packages/native-darwin-arm64/ # @docx-sax/native-darwin-arm64 placeholder payload
+packages/native-darwin-x64/   # @docx-sax/native-darwin-x64 placeholder payload
+packages/native-win32-x64/    # @docx-sax/native-win32-x64 placeholder payload
+packages/browser-wasm/          # @docx-sax/browser browser adapter + WASM assets
+demos/nextjs-wasm/    # Next.js browser/WASM demo
 test/DocxSax.Tests/   # generated DOCX fixtures, golden JSONL, and tests
 docs/                 # design notes as the project grows
 ```
@@ -45,12 +64,14 @@ dotnet test --configuration Release
 dotnet format --verify-no-changes --verbosity minimal
 dotnet pack --configuration Release --output artifacts/packages
 
-cd packages/docx-sax
 npm install
-npm run build
-npm test
+npm run build --workspace docx-sax
+npm run test --workspace docx-sax
+npm run build --workspace @docx-sax/native-linux-x64
+npm run test --workspace @docx-sax/native-linux-x64
+npm run build --workspace @docx-sax/browser
 npx playwright install chromium
-npm run test:browser
+npm run test --workspace @docx-sax/browser
 ```
 
 CI runs these checks on Ubuntu, Windows, and macOS with .NET 8. It also uploads Cobertura coverage artifacts, validates that CLI JSONL output parses line-by-line as JSON, installs the packed `DocxSax.Tool` from the local package output, and performs a Native AOT publish check for the CLI on each runner RID. The Linux leg additionally builds/tests the Node N-API wrapper and runs the browser/WASM Vite + Playwright smoke.
@@ -99,29 +120,29 @@ Event `type` values:
 ## Node wrapper usage
 
 ```js
-import { parseFile, parseFileBatches } from 'docx-sax/node';
+import { parseFile, parseFileBatches } from '@docx-sax/node';
 
 for await (const event of parseFile('document.docx')) {
     console.log(event.type, event.ordinal);
 }
 
 for await (const batch of parseFileBatches('document.docx', { batchSize: 256 })) {
-    // batch is an array of low-level events from the native bridge
+    // batch is DocxSaxEvent[] from the same model used by @docx-sax/browser
 }
 ```
 
-See [`docs/node-native.md`](docs/node-native.md) for local validation and current transport caveats. The v0 package validates on Linux x64 first.
+See [`docs/native-node.md`](docs/native-node.md) for local validation and current transport caveats. The v0 native plugin validates on Linux x64 first and is published as `@docx-sax/native-linux-x64`; `@docx-sax/node` is the ergonomic Node import path.
 
 ## Browser/WASM usage
 
 ```js
-import { parseBytes, parseBytesBatches } from 'docx-sax/browser';
+import { parseBytes, parseBytesBatches } from '@docx-sax/browser';
 
 const response = await fetch('/document.docx');
 const bytes = new Uint8Array(await response.arrayBuffer());
 
 for await (const batch of parseBytesBatches(bytes, { batchSize: 256 })) {
-    // batch is an array of the same low-level event payloads as CLI/Node
+    // batch is DocxSaxEvent[] from the same model used by @docx-sax/node
 }
 
 for await (const event of parseBytes(bytes)) {
@@ -129,7 +150,21 @@ for await (const event of parseBytes(bytes)) {
 }
 ```
 
-See [`docs/browser-wasm.md`](docs/browser-wasm.md) for local validation, artifact-size measurements, and current caveats. The spike validates that OpenXML SDK can parse a small generated DOCX fixture in browser WASM, but the published runtime is still large and not yet a polished package.
+See [`docs/browser-wasm.md`](docs/browser-wasm.md) for local validation, artifact-size measurements, and current caveats. The spike validates that OpenXML SDK can parse a small generated DOCX fixture in browser WASM, but the published runtime is still large and remains an alpha plugin package (`@docx-sax/browser`).
+
+## Next.js WASM demo
+
+`demos/nextjs-wasm` is an isolated Next.js app that loads `@docx-sax/browser` in a client component, accepts a `.docx` upload, parses it through the browser WASM bridge, and renders a simple text preview from `text` events grouped by paragraph ends. It also exposes the safe public smoke fixture at `/fixtures/simple.docx`.
+
+```bash
+cd demos/nextjs-wasm
+npm install
+npm run build:wasm   # publishes packages/browser-wasm WASM assets, then copies _framework/ into public/docx-sax/
+npm run build        # regular Next/Vercel build; intentionally does not run dotnet publish
+npm run test:e2e     # uploads public/fixtures/simple.docx and verifies WASM parse + preview render
+```
+
+For a single local validation command, run `npm test`. Vercel should use the plain `npm run build` path after WASM assets have been prepared by CI or a package/artifact step; generic Vercel builds should not republish the heavy .NET browser workload.
 
 ## Minimal library usage
 

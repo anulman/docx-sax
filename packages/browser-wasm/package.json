@@ -1,0 +1,33 @@
+{
+  "name": "@docx-sax/browser",
+  "version": "0.1.0-alpha.1",
+  "description": "Browser WebAssembly adapter for DocxSax typed DOCX SAX events. v0 bundles the WASM runtime assets.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "dist/wasm/wwwroot/_framework/**",
+    "!dist/wasm/wwwroot/_framework/*.pdb*",
+    "!dist/wasm/wwwroot/_framework/*.br",
+    "!dist/wasm/wwwroot/_framework/*.gz"
+  ],
+  "scripts": {
+    "build:dotnet": "rm -rf dist/wasm && dotnet publish ../../src/DocxSax.Browser/DocxSax.Browser.csproj --configuration Release -p:PublishDir=$PWD/dist/wasm/",
+    "build": "npm run build:dotnet",
+    "test": "npm run build && node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "vite": "^7.1.12"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
