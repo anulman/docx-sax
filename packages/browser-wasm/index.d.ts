@@ -12,6 +12,8 @@ export type DocxSaxBytesInput = Uint8Array | ArrayBuffer | ArrayBufferView | Blo
 export interface DocxSaxBatchOptions {
   /** Maximum number of events per yielded batch. Defaults to 128 when omitted or invalid. */
   batchSize?: number;
+  /** Minimum milliseconds between cooperative main-thread yields. Defaults to 64. */
+  mainThreadYieldIntervalMs?: number;
 }
 
 export interface BrowserRuntimeOptions {

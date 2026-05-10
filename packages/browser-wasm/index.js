@@ -134,12 +134,12 @@ function mapEventBatch(batch) {
   return batch.map(mapEventRow);
 }
 
-function animationFrame() {
-  if (typeof requestAnimationFrame === 'function') {
-    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+function taskYield() {
+  if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
+    return scheduler.yield();
   }
 
-  return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /**
@@ -188,12 +188,15 @@ export async function warmupRuntime(options = {}) {
  * Parse DOCX bytes/blob through the browser WASM bridge and yield arrays of transport-neutral DocxSax events.
  *
  * @param {Uint8Array | ArrayBuffer | ArrayBufferView | Blob} input
- * @param {{ batchSize?: number, dotnetModuleUrl?: string }} [options]
+ * @param {{ batchSize?: number, dotnetModuleUrl?: string, mainThreadYieldIntervalMs?: number }} [options]
  * @returns {AsyncGenerator<import('./index.d.ts').DocxSaxEvent[], void, void>}
  */
 export async function* parseBytesBatches(input, options = {}) {
   const bytes = await toUint8Array(input);
   const batchSize = Number.isInteger(options.batchSize) && options.batchSize > 0 ? options.batchSize : 128;
+  const mainThreadYieldIntervalMs = Number.isFinite(options.mainThreadYieldIntervalMs)
+    ? Math.max(16, options.mainThreadYieldIntervalMs)
+    : 64;
   const { exports } = await loadRuntime(options);
   const bridge = browserBridge(exports);
 
@@ -212,8 +215,8 @@ export async function* parseBytesBatches(input, options = {}) {
 
       yield mapEventBatch(batch);
 
-      if (typeof performance !== 'undefined' && performance.now() - lastMainThreadYield >= 16) {
-        await animationFrame();
+      if (typeof performance !== 'undefined' && performance.now() - lastMainThreadYield >= mainThreadYieldIntervalMs) {
+        await taskYield();
         lastMainThreadYield = performance.now();
       }
     }
