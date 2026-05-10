@@ -26,7 +26,6 @@ requestIdleCallback(async () => {
   await warmupRuntime();
 });
 
-
 const response = await fetch('/document.docx');
 const bytes = new Uint8Array(await response.arrayBuffer());
 
@@ -39,11 +38,9 @@ for await (const event of parseBytes(bytes)) {
 }
 ```
 
-The default loader expects the published .NET assets at `./dist/wasm/wwwroot/_framework/dotnet.js` relative to `packages/docx-sax/browser.js`. Pass `dotnetModuleUrl` if a bundler relocates the assets:
 TypeScript declarations are included for the shared `DocxSaxEvent` union: `package`, `part`, `relationship`, `element`, `text`, `end`, and `diagnostic` events plus shared XML attribute shapes.
 
 The default loader expects the published .NET assets at `./dist/wasm/wwwroot/_framework/dotnet.js` relative to `packages/docx-sax/browser.js`. Pass `dotnetModuleUrl` if a bundler relocates the assets:
-
 
 ```js
 for await (const batch of parseBytesBatches(bytes, {
@@ -70,15 +67,17 @@ CI runs the same browser smoke on the Linux leg. It is intentionally Linux-only 
 
 Observed on this spike:
 
-- OpenXML SDK and `System.IO.Packaging` do run in .NET 8 browser WASM for the small generated fixture.
-- A Release publish with trimming disabled produced roughly **46 MiB** in `packages/docx-sax/dist/wasm` with about **17 MiB** of gzip/brotli sidecars. The largest uncompressed payloads are `DocumentFormat.OpenXml.wasm` (~6.1 MiB), `System.Private.CoreLib.wasm` (~4.0 MiB), `System.Private.Xml.wasm` (~3.0 MiB), and `dotnet.native.wasm` (~2.7 MiB).
-- Publish trimming currently fails because framework/OpenXML dependencies produce trim warnings, so the project sets `<PublishTrimmed>false</PublishTrimmed>`. That is acceptable for the spike but too large for a polished browser package.
-- The browser bridge now uses a pull-based parse session so JavaScript can request one event-object batch at a time and yield to the main thread during large documents. In a headless Chromium profile of the 77,370-event exchanged Big Computer DOCX, pull-based parsing showed first preview at ~476ms median before warmup; adding idle `warmupRuntime()` reduced the measured first preview to ~139ms median, largest parse long task from ~428ms to ~97ms, and total parse/render from ~3.89s to ~3.39s.
-- Cold start includes loading the .NET browser runtime and OpenXML assemblies. Consumers should call `preloadRuntime()` and then `warmupRuntime()` during idle time; `warmupRuntime()` avoids private fixtures by generating a minimal DOCX inside the browser bridge. Worker isolation may still be useful if per-batch synchronous parsing remains too visible in UI apps.
+- OpenXML SDK and `System.IO.Packaging` run in .NET 8 browser WASM for the generated fixtures covered by browser smoke.
+- The browser project now publishes with trimming enabled. The current trimmed `_framework` directory is roughly **13.9 MiB** on disk including generated gzip/brotli sidecars, or **8.8 MiB** for the raw files that npm actually includes after excluding `*.pdb*`, `*.br`, and `*.gz` sidecars.
+- The largest raw browser payloads are currently `DocumentFormat.OpenXml.wasm` (~3.5 MiB), `dotnet.native.wasm` (~1.4 MiB), `System.Private.CoreLib.wasm` (~1.4 MiB), `System.Private.Xml.wasm` (~0.5 MiB), and `System.Linq.Expressions.wasm` (~0.3 MiB).
+- Trimming still emits a framework linker warning from `System.Linq.Expressions` (`IL2104`), so the browser project keeps `ILLinkTreatWarningsAsErrors=false`. Browser smoke/e2e coverage is the safety net until that upstream/library warning can be removed or rooted more precisely.
+- `npm pack --dry-run` for this combined Node+browser package is currently about **13.0 MiB packed** / **34.5 MiB unpacked** / **41 files**. Most unpacked size is the Linux native library plus the trimmed browser runtime.
+- The browser bridge uses a pull-based parse session so JavaScript can request one event-object batch at a time and yield during large documents. In a headless Chromium profile of the 77,370-event exchanged Big Computer DOCX, pull-based parsing showed first preview at ~476ms median before warmup; adding idle `warmupRuntime()` reduced the measured first preview to ~139ms median, largest parse long task from ~428ms to ~97ms, and total parse/render from ~3.89s to ~3.39s.
+- Cold start includes loading the .NET browser runtime and OpenXML assemblies. Consumers should call `preloadRuntime()` and then `warmupRuntime()` during idle time; `warmupRuntime()` avoids private fixtures by generating a minimal DOCX inside the browser bridge.
 
 ## Follow-ups
 
-- Move parsing into a WebWorker wrapper if the remaining per-batch main-thread work is still too visible for production UI.
-- Consider a callback/JS-import frame sink if pull-based batches prove insufficient for backpressure or cancellation semantics.
-- Investigate trim warnings/root descriptors or a lower-level ZIP/XML path if browser artifact size is a release blocker.
-- Add bundler examples for Vite/Next asset copying once packaging strategy is settled.
+- Provide bundler examples for Vite/Next asset copying once packaging strategy is settled.
+- Document a recommended Web Worker wrapper for UI apps that need stronger main-thread isolation than pull-based batches alone provide.
+- Add explicit cancellation/cleanup semantics to the browser parse session API if product usage shows abandoned parses are common.
+- Keep reducing browser payload size if the trimmed runtime remains too heavy for the eventual release target.
