@@ -355,8 +355,16 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # npm trusted publishing requires npm >= 11.5.1 and Node >= 22.14.0.
+          node-version: 24
           registry-url: https://registry.npmjs.org
+
+      - name: Verify npm trusted-publishing capable CLI
+        run: |
+          node --version
+          npm --version
+          node -e "const v = process.versions.node.split('.').map(Number); if (v[0] < 22 || (v[0] === 22 && v[1] < 14)) process.exit(1)"
+          npm -v | node -e "const fs=require('fs'); const v=fs.readFileSync(0,'utf8').trim().split('.').map(Number); if (v[0] < 11 || (v[0] === 11 && v[1] < 5) || (v[0] === 11 && v[1] === 5 && v[2] < 1)) process.exit(1)"
 
       - name: Download npm artifacts
         uses: actions/download-artifact@v4
