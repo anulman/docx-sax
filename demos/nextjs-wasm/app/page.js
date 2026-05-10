@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { parseBytesBatches, preloadRuntime, warmupRuntime } from '@docx-sax/browser';
+import { parseBytesBatches, preloadRuntime, setRuntimeBaseUrl, warmupRuntime } from '@docx-sax/browser';
 
-const DOTNET_MODULE_URL = '/docx-sax/_framework/dotnet.js';
+const RUNTIME_BASE_URL = '/docx-sax/_framework';
+setRuntimeBaseUrl(RUNTIME_BASE_URL);
 const INITIAL_STATUS = 'Choose a .docx file to parse it in your browser.';
 const PREVIEW_UPDATE_INTERVAL_MS = 100;
 const MAX_DIAGNOSTICS = 20;
@@ -197,14 +198,14 @@ export default function Home() {
 
     const preload = async () => {
       try {
-        await preloadRuntime({ dotnetModuleUrl: DOTNET_MODULE_URL });
+        await preloadRuntime();
         if (!cancelled) {
           setStatus((currentStatus) => currentStatus === INITIAL_STATUS
             ? 'WASM runtime ready. Choose a .docx file to parse it in your browser.'
             : currentStatus);
         }
 
-        await warmupRuntime({ dotnetModuleUrl: DOTNET_MODULE_URL });
+        await warmupRuntime();
         if (!cancelled) {
           setStatus((currentStatus) => currentStatus === 'WASM runtime ready. Choose a .docx file to parse it in your browser.'
             ? 'WASM runtime ready and warmed. Choose a .docx file to parse it in your browser.'
@@ -246,8 +247,8 @@ export default function Home() {
 
       // parseBytesBatches(file) yields the same DocxSaxEvent object batches as @docx-sax/node
       // parseFileBatches(path); the browser wrapper only differs in accepting bytes/blob input and
-      // a dotnetModuleUrl. The WASM bridge is pull-based, so each loop gets a real parsed batch.
-      for await (const batch of parseBytesBatches(file, { batchSize: 128, dotnetModuleUrl: DOTNET_MODULE_URL })) {
+      // a hosted runtime base URL. The WASM bridge is pull-based, so each loop gets a real parsed batch.
+      for await (const batch of parseBytesBatches(file, { batchSize: 128 })) {
         appendPreviewBatch(preview, batch);
         for (const event of batch) {
           nextSummary.events += 1;

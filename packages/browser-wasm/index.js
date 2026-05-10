@@ -1,5 +1,24 @@
+import { packageVersion } from './version.js';
+
 const runtimePromises = new Map();
 const warmupPromises = new Map();
+let runtimeBaseUrl = `https://cdn.jsdelivr.net/npm/@docx-sax/browser@${packageVersion}/dist/wasm/wwwroot/_framework`;
+
+function normalizeRuntimeBaseUrl(baseUrl) {
+  return String(baseUrl).replace(/\/+$/, '');
+}
+
+function resolveDotnetModuleUrl(options = {}) {
+  return options.dotnetModuleUrl ?? `${runtimeBaseUrl}/dotnet.js`;
+}
+
+export function setRuntimeBaseUrl(baseUrl) {
+  runtimeBaseUrl = normalizeRuntimeBaseUrl(baseUrl);
+}
+
+export function getRuntimeBaseUrl() {
+  return runtimeBaseUrl;
+}
 
 async function toUint8Array(input) {
   if (input instanceof Uint8Array) {
@@ -22,7 +41,7 @@ async function toUint8Array(input) {
 }
 
 async function loadRuntime(options = {}) {
-  const dotnetModuleUrl = options.dotnetModuleUrl ?? './dist/wasm/wwwroot/_framework/dotnet.js';
+  const dotnetModuleUrl = resolveDotnetModuleUrl(options);
   let runtimePromise = runtimePromises.get(dotnetModuleUrl);
   if (!runtimePromise) {
     runtimePromise = import(/* @vite-ignore */ /* webpackIgnore: true */ dotnetModuleUrl).then(async ({ dotnet }) => {
@@ -167,7 +186,7 @@ export async function preloadRuntime(options = {}) {
  * @returns {Promise<void>}
  */
 export async function warmupRuntime(options = {}) {
-  const dotnetModuleUrl = options.dotnetModuleUrl ?? './dist/wasm/wwwroot/_framework/dotnet.js';
+  const dotnetModuleUrl = resolveDotnetModuleUrl(options);
   let warmupPromise = warmupPromises.get(dotnetModuleUrl);
   if (!warmupPromise) {
     warmupPromise = loadRuntime(options).then(({ exports }) => {
@@ -245,4 +264,6 @@ export default {
   parseBytesBatches,
   preloadRuntime,
   warmupRuntime,
+  setRuntimeBaseUrl,
+  getRuntimeBaseUrl,
 };

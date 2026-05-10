@@ -17,7 +17,7 @@ export interface DocxSaxBatchOptions {
 }
 
 export interface BrowserRuntimeOptions {
-  /** URL for the published .NET browser runtime module. Defaults to ./dist/wasm/wwwroot/_framework/dotnet.js. */
+  /** URL for the published .NET browser runtime module. Defaults to the configured runtime base URL + /dotnet.js. */
   dotnetModuleUrl?: string;
 }
 
@@ -95,6 +95,12 @@ export interface DocxSaxDiagnosticEvent {
   partUri?: string | null;
 }
 
+/** Set the base URL that contains the .NET browser runtime _framework assets. */
+export function setRuntimeBaseUrl(baseUrl: string | URL): void;
+
+/** Get the active base URL for the .NET browser runtime _framework assets. */
+export function getRuntimeBaseUrl(): string;
+
 /** Start loading and initializing the browser WASM runtime before the first parse. */
 export function preloadRuntime(options?: BrowserRuntimeOptions): Promise<void>;
 
@@ -112,6 +118,8 @@ declare const defaultExport: {
   parseBytesBatches: typeof parseBytesBatches;
   preloadRuntime: typeof preloadRuntime;
   warmupRuntime: typeof warmupRuntime;
+  setRuntimeBaseUrl: typeof setRuntimeBaseUrl;
+  getRuntimeBaseUrl: typeof getRuntimeBaseUrl;
 };
 
 export default defaultExport;

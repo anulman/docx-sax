@@ -2,13 +2,15 @@
 
 The browser bridge is a v0 spike around the same typed low-level event model as the .NET core, CLI JSONL adapter, and Native bridge.
 
-The public API is transport-neutral above the byte/blob input boundary: `parseBytes()` yields the same `DocxSaxEvent` objects that `@docx-sax/node` yields from `parseFile()`, and `parseBytesBatches()` yields `DocxSaxEvent[]` batches. The shared option is `{ batchSize }`; browser/WASM additionally supports `{ dotnetModuleUrl }` when assets are hosted somewhere other than the package default. `preloadRuntime()` starts the runtime early, and `warmupRuntime()` can then exercise OpenXML/XML/event-mapping cold paths with an in-memory DOCX before a user selects a private document.
+The public API is transport-neutral above the byte/blob input boundary: `parseBytes()` yields the same `DocxSaxEvent` objects that `@docx-sax/node` yields from `parseFile()`, and `parseBytesBatches()` yields `DocxSaxEvent[]` batches. The shared option is `{ batchSize }`; browser/WASM additionally supports `setRuntimeBaseUrl()` or `{ dotnetModuleUrl }` when assets are hosted somewhere other than the package CDN default. `preloadRuntime()` starts the runtime early, and `warmupRuntime()` can then exercise OpenXML/XML/event-mapping cold paths with an in-memory DOCX before a user selects a private document.
 
 ## Shape
 
 - `src/DocxSax.Browser` is a `Microsoft.NET.Sdk.WebAssembly` project targeting `net8.0`/`browser-wasm`.
 - `BrowserBridge.BeginParseBytesBatches(byte[] bytes, int batchSize)`, `ReadNextBatch(sessionId)`, and `EndParseBytesBatches(sessionId)` are exported to JavaScript with `[JSExport]` as a pull-based batch stream. The bridge returns positional primitive/object-array rows; `packages/browser-wasm/index.js` maps those rows to public `DocxSaxEvent` objects.
 - `packages/browser-wasm/index.js` hides the .NET runtime details and exposes async generators:
+  - `setRuntimeBaseUrl(baseUrl)` points the runtime loader at a hosted `_framework` directory.
+  - `getRuntimeBaseUrl()` returns the active `_framework` base URL.
   - `preloadRuntime({ dotnetModuleUrl })` loads and initializes the singleton .NET browser runtime.
   - `warmupRuntime({ dotnetModuleUrl })` parses a tiny generated DOCX in memory and initializes OpenXML package/XML plus DocxSax event mapping paths. The warmup promise is cached per runtime URL.
   - `parseBytesBatches(input, { batchSize })` yields `DocxSaxEvent[]` batches.
@@ -19,7 +21,16 @@ The public API is transport-neutral above the byte/blob input boundary: `parseBy
 ## Usage
 
 ```js
-import { parseBytes, parseBytesBatches, preloadRuntime, warmupRuntime } from '@docx-sax/browser';
+import {
+  parseBytes,
+  parseBytesBatches,
+  preloadRuntime,
+  setRuntimeBaseUrl,
+  warmupRuntime,
+} from '@docx-sax/browser';
+
+// Optional. If omitted, the package falls back to the currently installed package version on jsDelivr.
+setRuntimeBaseUrl('/docx-sax/_framework');
 
 requestIdleCallback(async () => {
   await preloadRuntime();
@@ -40,7 +51,21 @@ for await (const event of parseBytes(bytes)) {
 
 TypeScript declarations are included for the shared `DocxSaxEvent` union: `package`, `part`, `relationship`, `element`, `text`, `end`, and `diagnostic` events plus shared XML attribute shapes.
 
-The default loader expects the published .NET assets at `./dist/wasm/wwwroot/_framework/dotnet.js` relative to `packages/browser-wasm/index.js`. Pass `dotnetModuleUrl` if a bundler relocates the assets:
+If unset, the default loader falls back to the currently installed package version on jsDelivr:
+
+```text
+https://cdn.jsdelivr.net/npm/@docx-sax/browser@<package-version>/dist/wasm/wwwroot/_framework/dotnet.js
+```
+
+For production apps that prefer to self-host the runtime assets, either point the package at a copied `_framework` directory with `setRuntimeBaseUrl()`:
+
+```js
+import { setRuntimeBaseUrl } from '@docx-sax/browser';
+
+setRuntimeBaseUrl('/docx-sax/_framework');
+```
+
+or pass `dotnetModuleUrl` for a one-off/custom location:
 
 ```js
 for await (const batch of parseBytesBatches(bytes, {
@@ -50,9 +75,60 @@ for await (const batch of parseBytesBatches(bytes, {
 }
 ```
 
+## Asset copying helpers
+
+The browser package ships optional bundler integrations plus a plain npm-bin copy command. These copy the packaged .NET `_framework` assets into your app output; application code should then call `setRuntimeBaseUrl()` with the public URL for that copied directory.
+
+### Vite
+
+```js
+// vite.config.js
+import { defineConfig } from 'vite';
+import { docxSaxWasm } from '@docx-sax/browser/vite';
+
+export default defineConfig({
+  plugins: [docxSaxWasm({ mount: '/docx-sax' })],
+});
+```
+
+At runtime:
+
+```js
+import { setRuntimeBaseUrl } from '@docx-sax/browser';
+
+setRuntimeBaseUrl(`${import.meta.env.BASE_URL}docx-sax/_framework`);
+```
+
+### Webpack
+
+```js
+// webpack.config.js
+import { DocxSaxWasmWebpackPlugin } from '@docx-sax/browser/webpack';
+
+export default {
+  plugins: [new DocxSaxWasmWebpackPlugin({ mount: 'docx-sax' })],
+};
+```
+
+At runtime, set the same public path:
+
+```js
+import { setRuntimeBaseUrl } from '@docx-sax/browser';
+
+setRuntimeBaseUrl('/docx-sax/_framework');
+```
+
+### Generic copy command
+
+```bash
+npx @docx-sax/browser copy-wasm public/docx-sax
+```
+
+The command writes `public/docx-sax/_framework`. If the destination already ends in `_framework`, it writes directly to that directory.
+
 ## Next.js demo
 
-`demos/nextjs-wasm` provides a small browser-only demo for Next.js/Vercel validation. It imports `@docx-sax/browser` from the local `@docx-sax/browser` package, passes `dotnetModuleUrl: '/docx-sax/_framework/dotnet.js'`, preloads and warms the WASM runtime during idle time, and renders a simple preview from parsed event-stream `text` records. The checked-in fixtures are public/generated regression fixtures, not private corpus files.
+`demos/nextjs-wasm` provides a small browser-only demo for Next.js/Vercel validation. It imports `@docx-sax/browser` from the local `@docx-sax/browser` package, points the runtime at `/docx-sax/_framework`, preloads and warms the WASM runtime during idle time, and renders a simple preview from parsed event-stream `text` records. The checked-in fixtures are public/generated regression fixtures, not private corpus files.
 
 The demo intentionally separates heavy WASM preparation from the generic Next build:
 
@@ -92,7 +168,6 @@ Observed on this spike:
 
 ## Follow-ups
 
-- Provide bundler examples for Vite/Next asset copying once packaging strategy is settled.
 - Document a recommended Web Worker wrapper for UI apps that need stronger main-thread isolation than pull-based batches alone provide.
 - Add explicit cancellation/cleanup semantics to the browser parse session API if product usage shows abandoned parses are common.
 - Keep reducing browser payload size if the trimmed runtime remains too heavy for the eventual release target.

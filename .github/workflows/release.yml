@@ -272,6 +272,7 @@ jobs:
             }
             writeJson(path, json);
           }
+          fs.writeFileSync('packages/browser-wasm/version.js', `export const packageVersion = ${JSON.stringify(version)};\n`);
 
           const lockPath = 'package-lock.json';
           const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
@@ -441,6 +442,7 @@ jobs:
             }
             writeJson(path, json);
           }
+          fs.writeFileSync('packages/browser-wasm/version.js', `export const packageVersion = ${JSON.stringify(version)};\n`);
           const lockPath = 'package-lock.json';
           const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
           lock.version = version;

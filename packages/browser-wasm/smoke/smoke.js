@@ -1,6 +1,8 @@
-import { parseBytes, parseBytesBatches, preloadRuntime, warmupRuntime } from '../index.js';
+import { parseBytes, parseBytesBatches, preloadRuntime, setRuntimeBaseUrl, warmupRuntime } from '../index.js';
 import { assertCommonDocxSaxEventModel, collectEventShapeSummary } from '../../../test/js/common-event-shape.mjs';
 import { createGeneratedDocxBytes } from '../../../test/js/generated-docx.mjs';
+
+setRuntimeBaseUrl('/packages/browser-wasm/dist/wasm/wwwroot/_framework');
 
 const response = await fetch('/test/DocxSax.Tests/Fixtures/simple.docx');
 if (!response.ok) {
